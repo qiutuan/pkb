@@ -31,8 +31,14 @@ public class SettingsController {
     }
 
     @PostMapping("/reset")
-    public ApiResponse<Map<String, Object>> reset() {
-        service.reset();
+    public ApiResponse<Map<String, Object>> reset(@RequestBody(required = false) Map<String, Object> body) {
+        // 兼容旧调用：无 body 或 key 为空 = 全部恢复默认
+        Object key = body == null ? null : body.get("key");
+        if (key == null || String.valueOf(key).isBlank()) {
+            service.reset();
+        } else {
+            service.resetKey(String.valueOf(key));
+        }
         return ApiResponse.ok(service.all());
     }
 }

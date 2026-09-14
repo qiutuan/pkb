@@ -27,6 +27,7 @@ public class SettingsService {
     public static final String K_SYSTEM_PROMPT = "systemPrompt";
     public static final String K_EXTRACT_PROMPT = "extractPrompt";
     public static final String K_GRAPH_PROMPT = "graphPrompt";
+    public static final String K_GRAPH_BUILD_PROMPT = "graphBuildPrompt";
     public static final String K_CHUNK_STRATEGY = "chunkStrategy";
     public static final String K_CHUNK_SIZE = "chunkSize";
     public static final String K_CHUNK_OVERLAP = "chunkOverlap";
@@ -40,6 +41,8 @@ public class SettingsService {
     public static final String K_GRAPH_EXTRACT_BATCH = "graphExtractBatch";
     public static final String K_GRAPH_EXTRACT_ON_INDEX = "graphExtractOnIndex";
     public static final String K_GRAPH_MERGE_THRESHOLD = "graphEntityMergeThreshold";
+    /** 图谱抽取专用模型 Provider id；0 = 跟随默认聊天模型 */
+    public static final String K_GRAPH_EXTRACT_PROVIDER = "graphExtractProvider";
 
     private final PkbProperties props;
     private final Yaml yaml;
@@ -97,6 +100,7 @@ public class SettingsService {
         out.put(K_SYSTEM_PROMPT, d.getSystemPromptOrDefault());
         out.put(K_EXTRACT_PROMPT, d.getExtractPromptOrDefault());
         out.put(K_GRAPH_PROMPT, d.getGraphPromptOrDefault());
+        out.put(K_GRAPH_BUILD_PROMPT, d.getGraphBuildPromptOrDefault());
         out.put(K_CHUNK_STRATEGY, d.getChunk().getStrategy());
         out.put(K_CHUNK_SIZE, d.getChunk().getSize());
         out.put(K_CHUNK_OVERLAP, d.getChunk().getOverlap());
@@ -110,8 +114,31 @@ public class SettingsService {
         out.put(K_GRAPH_EXTRACT_BATCH, d.getGraph().getExtractBatch());
         out.put(K_GRAPH_EXTRACT_ON_INDEX, d.getGraph().isExtractOnIndex());
         out.put(K_GRAPH_MERGE_THRESHOLD, d.getGraph().getEntityMergeThreshold());
+        out.put(K_GRAPH_EXTRACT_PROVIDER, d.getGraphExtractProvider());
         out.putAll(load());
         return out;
+    }
+
+    /** 重置单个键：删除覆盖文件中的对应项，恢复默认值 */
+    public void resetKey(String key) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+        synchronized (lock) {
+            Map<String, Object> m = load();
+            if (m.remove(key) != null) {
+                try {
+                    Files.createDirectories(file.getParent());
+                    Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                    try (var writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
+                        yaml.dump(m, writer);
+                    }
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    throw new RuntimeException("重置设置失败: " + e.getMessage(), e);
+                }
+            }
+        }
     }
 
     public void reset() {
@@ -169,6 +196,15 @@ public class SettingsService {
 
     public String graphPrompt() {
         return str(K_GRAPH_PROMPT, props.getDefaults().getGraphPromptOrDefault());
+    }
+
+    public String graphBuildPrompt() {
+        return str(K_GRAPH_BUILD_PROMPT, props.getDefaults().getGraphBuildPromptOrDefault());
+    }
+
+    /** 图谱抽取专用模型 Provider id；0 = 跟随默认聊天模型 */
+    public long graphExtractProvider() {
+        return intVal(K_GRAPH_EXTRACT_PROVIDER, (int) props.getDefaults().getGraphExtractProvider());
     }
 
     public int ragTopK() {

@@ -39,6 +39,13 @@ const Api = {
     return this.request('POST', `/kbs/${kbId}/documents`, fd);
   },
 
+  /** 详细上传：返回 {ok:[文档], failed:[{fileName,reason}]} */
+  uploadDetailed(kbId, files) {
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    return this.request('POST', `/kbs/${kbId}/documents/upload`, fd);
+  },
+
   /**
    * 流式对话：SSE over fetch
    * handlers: { onDelta(text), onDone(payload), onError(message) }

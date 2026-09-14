@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="pkbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#FB923C"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角方形底（圆角半径约为边长的 22%） -->
+  <rect x="0" y="0" width="1024" height="1024" rx="225" fill="url(#pkbGrad)"/>
+
+  <!-- 主干（自下而上） -->
+  <line x1="512" y1="800" x2="512" y2="640" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+
+  <!-- 分叉（主干向上分出三支） -->
+  <line x1="512" y1="640" x2="360" y2="470" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <line x1="512" y1="640" x2="664" y2="470" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <line x1="512" y1="560" x2="512" y2="330" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+
+  <!-- 节点间细线（知识网络） -->
+  <line x1="360" y1="470" x2="512" y2="330" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  <line x1="664" y1="470" x2="512" y2="330" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  <line x1="360" y1="470" x2="664" y2="470" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- 圆点节点（3~4 个） -->
+  <circle cx="360" cy="470" r="42" fill="#FFFFFF"/>
+  <circle cx="664" cy="470" r="42" fill="#FFFFFF"/>
+  <circle cx="512" cy="330" r="42" fill="#FFFFFF"/>
+  <circle cx="512" cy="720" r="34" fill="#FFFFFF"/>
+</svg>

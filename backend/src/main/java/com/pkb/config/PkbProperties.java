@@ -58,6 +58,10 @@ public class PkbProperties {
     public static class Pipeline {
         private int workers = 2;
         private int queueCapacity = 200;
+        /** 单文件上传大小上限（MB），默认 200 */
+        private int maxUploadMb = 200;
+        /** 单次上传文件数量上限，默认 50（Tomcat multipart 单请求 part 数存在框架级上限，取安全值） */
+        private int maxUploadFiles = 50;
     }
 
     @Data

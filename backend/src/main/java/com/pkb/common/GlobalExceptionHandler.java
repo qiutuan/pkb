@@ -19,7 +19,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ApiResponse<Void> handleMaxUpload(MaxUploadSizeExceededException e) {
-        return ApiResponse.fail(400, "文件超出大小限制（最大 500MB）");
+        log.warn("上传超出限制: {}", e.getMessage());
+        return ApiResponse.fail(400, "上传超出大小限制：单文件不超过 200MB，单次不超过 50 个文件，请拆分后重试");
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

@@ -55,6 +55,7 @@ public class DocumentController {
     public ApiResponse<List<Document>> upload(@PathVariable long kbId,
                                               @RequestParam("files") List<MultipartFile> files) {
         KnowledgeBase kb = kbService.require(kbId);
+        checkUploadLimits(files);
         List<Document> created = new ArrayList<>();
         try {
             for (MultipartFile file : files) {
@@ -76,6 +77,16 @@ public class DocumentController {
         KnowledgeBase kb = kbService.require(kbId);
         List<Document> ok = new ArrayList<>();
         List<UploadResult.FailedFile> failed = new ArrayList<>();
+        try {
+            checkUploadLimits(files);
+        } catch (BusinessException e) {
+            for (MultipartFile f : files) {
+                String name = f.getOriginalFilename() == null || f.getOriginalFilename().isBlank()
+                        ? "未命名文件" : f.getOriginalFilename();
+                failed.add(new UploadResult.FailedFile(name, e.getMessage()));
+            }
+            return ApiResponse.ok(new UploadResult(ok, failed));
+        }
         for (MultipartFile file : files) {
             String name = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()
                     ? "未命名文件" : file.getOriginalFilename();
@@ -88,6 +99,23 @@ public class DocumentController {
             }
         }
         return ApiResponse.ok(new UploadResult(ok, failed));
+    }
+
+    /** 上传前置限制：单次数量、单文件大小（多模态视频等大文件的内存安全） */
+    private void checkUploadLimits(List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            throw new BusinessException("未选择文件");
+        }
+        if (files.size() > props.getPipeline().getMaxUploadFiles()) {
+            throw new BusinessException("单次最多上传 " + props.getPipeline().getMaxUploadFiles() + " 个文件");
+        }
+        long maxBytes = props.getPipeline().getMaxUploadMb() * 1024L * 1024L;
+        for (MultipartFile f : files) {
+            if (f != null && f.getSize() > maxBytes) {
+                throw new BusinessException("文件过大：" + (f.getOriginalFilename() == null ? "未命名" : f.getOriginalFilename())
+                        + "（单文件上限 " + props.getPipeline().getMaxUploadMb() + " MB）");
+            }
+        }
     }
 
     public record UploadResult(List<Document> ok, List<FailedFile> failed) {
@@ -117,6 +145,8 @@ public class DocumentController {
             Files.createDirectories(dir);
             String safeName = com.pkb.util.TextUtil.safeFileName(name);
             Path target = dir.resolve(System.currentTimeMillis() + "_" + safeName);
+            // 先落盘再入库：避免 transferTo 失败时留下永远 PENDING 的脏记录
+            file.transferTo(target);
 
             Document doc = new Document();
             doc.setKbId(kb.getId());
@@ -127,7 +157,6 @@ public class DocumentController {
             doc.setStatus("PENDING");
             doc.setProgress(0d);
             long docId = documentDao.insert(doc);
-            file.transferTo(target);
             pipeline.submit(docId);
             return documentDao.findById(docId);
         } catch (BusinessException e) {

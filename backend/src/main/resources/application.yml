@@ -9,8 +9,8 @@ spring:
     name: pkb
   servlet:
     multipart:
-      max-file-size: 500MB
-      max-request-size: 600MB
+      max-file-size: 200MB
+      max-request-size: 250MB
   jackson:
     default-property-inclusion: non_null
     time-zone: Asia/Shanghai
@@ -38,6 +38,8 @@ pkb:
   pipeline:
     workers: 2                 # 文档处理流水线并发数
     queue-capacity: 200
+    max-upload-mb: 200             # 单文件上传大小上限（MB）
+    max-upload-files: 50           # 单次上传文件数量上限
   # API Key 加密密钥：留空则首次启动自动生成并保存到 <data-dir>/.secret（也可用环境变量 PKB_ENCRYPT_KEY 注入）
   security:
     encrypt-key: ""

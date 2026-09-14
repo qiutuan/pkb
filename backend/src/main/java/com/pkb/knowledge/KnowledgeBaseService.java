@@ -64,11 +64,14 @@ public class KnowledgeBaseService {
         if (kb.getChunkStrategy() == null || kb.getChunkStrategy().isBlank()) {
             kb.setChunkStrategy("fixed");
         }
-        if (kb.getChunkSize() == null || kb.getChunkSize() < 50) {
-            kb.setChunkSize(600);
+        if (kb.getChunkSize() == null || kb.getChunkSize() < 100 || kb.getChunkSize() > 4000) {
+            throw new BusinessException("分块大小需在 100–4000 之间");
         }
-        if (kb.getChunkOverlap() == null || kb.getChunkOverlap() < 0) {
-            kb.setChunkOverlap(100);
+        if (kb.getChunkOverlap() == null || kb.getChunkOverlap() < 0 || kb.getChunkOverlap() > 500) {
+            throw new BusinessException("分块重叠需在 0–500 之间");
+        }
+        if (kb.getChunkOverlap() >= kb.getChunkSize()) {
+            throw new BusinessException("分块重叠必须小于分块大小");
         }
         if (kb.getId() == null) {
             kb.setId(dao.insert(kb));

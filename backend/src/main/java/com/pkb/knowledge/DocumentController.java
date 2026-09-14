@@ -50,7 +50,7 @@ public class DocumentController {
         this.props = props;
     }
 
-    /** 上传文档（可多文件），纯文本模式拒绝媒体文件 */
+    /** 上传文档（可多文件），纯文本模式拒绝媒体文件；保持旧响应形状（文档数组） */
     @PostMapping("/kbs/{kbId}/documents")
     public ApiResponse<List<Document>> upload(@PathVariable long kbId,
                                               @RequestParam("files") List<MultipartFile> files) {
@@ -67,6 +67,32 @@ public class DocumentController {
             }
         }
         return ApiResponse.ok(created);
+    }
+
+    /** 上传（详细版）：返回每个文件的结果（成功列表 + 失败列表及原因），供前端展示进度与失败原因 */
+    @PostMapping("/kbs/{kbId}/documents/upload")
+    public ApiResponse<UploadResult> uploadDetailed(@PathVariable long kbId,
+                                                    @RequestParam("files") List<MultipartFile> files) {
+        KnowledgeBase kb = kbService.require(kbId);
+        List<Document> ok = new ArrayList<>();
+        List<UploadResult.FailedFile> failed = new ArrayList<>();
+        for (MultipartFile file : files) {
+            String name = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()
+                    ? "未命名文件" : file.getOriginalFilename();
+            try {
+                ok.add(uploadOne(kb, file));
+            } catch (BusinessException e) {
+                failed.add(new UploadResult.FailedFile(name, e.getMessage()));
+            } catch (Exception e) {
+                failed.add(new UploadResult.FailedFile(name, "处理失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())));
+            }
+        }
+        return ApiResponse.ok(new UploadResult(ok, failed));
+    }
+
+    public record UploadResult(List<Document> ok, List<FailedFile> failed) {
+        public record FailedFile(String fileName, String reason) {
+        }
     }
 
     private Document uploadOne(KnowledgeBase kb, MultipartFile file) {

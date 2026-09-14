@@ -53,4 +53,12 @@ public class CategoryService {
         }
         dao.delete(id);
     }
+
+    /** 同级拖拽排序：ids 顺序即 sort_order */
+    public void reorder(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        dao.reorder(ids);
+    }
 }

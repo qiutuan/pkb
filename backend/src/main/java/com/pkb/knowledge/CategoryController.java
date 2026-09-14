@@ -44,4 +44,11 @@ public class CategoryController {
         service.delete(id);
         return ApiResponse.ok();
     }
+
+    /** 同级拖拽排序（ids 顺序即新顺序） */
+    @PostMapping("/reorder")
+    public ApiResponse<Void> reorder(@RequestBody(required = false) List<Long> ids) {
+        service.reorder(ids == null ? List.of() : ids);
+        return ApiResponse.ok();
+    }
 }

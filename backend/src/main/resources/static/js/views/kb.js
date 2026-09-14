@@ -27,7 +27,7 @@ const KbView = {
     const roots = this.categories.filter(c => !c.parentId);
     const build = (p, depth) => {
       const kids = this.categories.filter(c => c.parentId === p.id);
-      return `<div class="cat-node" style="padding-left:${depth * 16}px" data-id="${p.id}">
+      return `<div class="cat-node ${!p.parentId ? 'cat-root' : ''}" style="padding-left:${depth * 16}px" data-id="${p.id}" draggable="${!p.parentId}">
         <span class="cat-name">${'📁 '.repeat(Math.min(depth, 3))}${Util.esc(p.name)}</span>
         <span class="cat-count">${this.kbs.filter(k => k.kb.categoryId === p.id).length}</span>
         <span class="cat-ops">
@@ -36,8 +36,15 @@ const KbView = {
         </span>
       </div>` + (kids.map(k => build(k, depth + 1)).join(''));
     };
-    return roots.map(r => build(r, 0)).join('') +
-      (this.categories.length ? '' : '<div class="hint" style="padding:10px">暂无分类，点击右上角「新建分类」</div>');
+    const uncat = this.kbs.filter(k => !k.kb.categoryId).length;
+    return `
+      <div class="cat-node cat-uncat" data-id="">
+        <span class="cat-name">📂 未分类</span>
+        <span class="cat-count">${uncat}</span>
+        <span class="cat-ops"><span class="hint" title="系统默认分组，不可删除">默认</span></span>
+      </div>` +
+      roots.map(r => build(r, 0)).join('') +
+      (this.categories.length ? '' : '<div class="hint" style="padding:10px">点击右上角「新建分类」</div>');
   },
 
   render() {
@@ -63,18 +70,30 @@ const KbView = {
       </div>`;
   },
 
+  kbStatusBadge(v) {
+    if (!v) return '';
+    const { failedDocs, processingDocs, pendingDocs, docCount } = v;
+    if (failedDocs > 0) return `<span class="badge badge-danger" title="${failedDocs} 个文档索引失败">索引失败</span>`;
+    if (processingDocs > 0) return `<span class="badge badge-amber">索引中 ${processingDocs}</span>`;
+    if (pendingDocs > 0) return `<span class="badge badge-gray">待处理 ${pendingDocs}</span>`;
+    if (docCount > 0) return `<span class="badge badge-green">已完成</span>`;
+    return `<span class="badge badge-gray">暂无文档</span>`;
+  },
+
   renderKbs() {
     if (!this.kbs.length) {
       return `<div class="empty"><div class="empty-icon">🗂</div><div class="empty-title">还没有知识库</div><div>创建知识库后上传文档，即可开始 RAG 问答与图谱构建</div></div>`;
     }
     return this.kbs.map(v => {
       const k = v.kb;
+      const accept = k.multimodal ? '.txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.bmp,.webp,.mp4,.mov,.avi' : '.txt,.md,.pdf,.docx,.doc';
       return `<div class="kb-card" data-id="${k.id}">
         <div class="kb-card-top">
           <span class="kb-card-name">${Util.esc(k.name)}</span>
           ${k.multimodal ? '<span class="badge badge-purple">多模态</span>' : '<span class="badge badge-gray">纯文本</span>'}
           ${k.graphEnabled ? '<span class="badge badge-teal">图谱</span>' : ''}
         </div>
+        <div class="kb-card-status">${this.kbStatusBadge(v)}</div>
         <div class="kb-card-desc">${Util.esc(k.description || '暂无描述')}</div>
         <div class="kb-card-meta">
           <span>分类：${Util.esc(v.categoryName || '未分类')}</span>
@@ -84,10 +103,12 @@ const KbView = {
           <span>文档 ${v.docCount}</span><span>分块 ${v.chunkCount}</span><span>向量 ${v.vectorCount}</span>
         </div>
         <div class="kb-card-actions">
-          <button class="btn btn-sm btn-primary" data-open="${k.id}">管理文档</button>
+          <button class="btn btn-sm btn-primary" data-upload="${k.id}" title="选择文件上传，支持多选">上传文档</button>
+          <button class="btn btn-sm" data-open="${k.id}">打开</button>
           <button class="btn btn-sm" data-edit="${k.id}">编辑</button>
           <button class="btn btn-sm btn-danger" data-del="${k.id}">删除</button>
         </div>
+        <input type="file" class="kb-card-file" data-file="${k.id}" multiple hidden accept="${accept}">
       </div>`;
     }).join('');
   },
@@ -108,10 +129,54 @@ const KbView = {
         });
       }
     });
+
+    // 分类同级拖拽排序（仅根分类可拖）
+    let dragCatId = null;
+    this.el.querySelector('#kbCatTree').addEventListener('dragstart', e => {
+      const node = e.target.closest('.cat-node[data-id]');
+      if (node && node.dataset.id) { dragCatId = Number(node.dataset.id); e.dataTransfer.effectAllowed = 'move'; }
+    });
+    this.el.querySelector('#kbCatTree').addEventListener('dragover', e => {
+      const node = e.target.closest('.cat-node[data-id]');
+      if (node && node.dataset.id) {
+        e.preventDefault();
+        node.classList.add('drag-over');
+      }
+    });
+    this.el.querySelector('#kbCatTree').addEventListener('dragleave', e => {
+      const node = e.target.closest('.cat-node');
+      if (node) node.classList.remove('drag-over');
+    });
+    this.el.querySelector('#kbCatTree').addEventListener('drop', async e => {
+      e.preventDefault();
+      const node = e.target.closest('.cat-node[data-id]');
+      this.el.querySelectorAll('.cat-node').forEach(n => n.classList.remove('drag-over'));
+      if (!node || !node.dataset.id || dragCatId === null) { dragCatId = null; return; }
+      const targetId = Number(node.dataset.id);
+      dragCatId = null;
+      if (targetId === dragCatId) return;
+      // 只重排根分类顺序
+      const roots = this.categories.filter(c => !c.parentId);
+      const from = roots.findIndex(c => c.id === dragCatId);
+      const to = roots.findIndex(c => c.id === targetId);
+      if (from < 0 || to < 0) return;
+      const arr = roots.map(c => c.id);
+      arr.splice(to, 0, arr.splice(from, 1)[0]);
+      try {
+        await Api.post('/categories/reorder', arr);
+        toast('已更新分类顺序', 'success');
+        await this.reload(); this.render(); this.bind();
+      } catch (err) { toast(err.message, 'error'); }
+    });
     this.el.querySelector('#kbList').addEventListener('click', e => {
+      const upload = e.target.closest('[data-upload]');
       const open = e.target.closest('[data-open]');
       const edit = e.target.closest('[data-edit]');
       const del = e.target.closest('[data-del]');
+      if (upload) {
+        const input = this.el.querySelector(`.kb-card-file[data-file="${upload.dataset.upload}"]`);
+        if (input) { this.uploadTarget = Number(upload.dataset.upload); input.click(); }
+      }
       if (open) this.openKb(Number(open.dataset.open));
       if (edit) {
         const v = this.kbs.find(x => x.kb.id === Number(edit.dataset.edit));
@@ -119,13 +184,81 @@ const KbView = {
       }
       if (del) {
         const v = this.kbs.find(x => x.kb.id === Number(del.dataset.del));
-        confirmBox(`删除知识库「${v.kb.name}」？文档与向量索引将一并删除，不可恢复。`).then(async ok => {
+        confirmBox(`删除知识库「${v.kb.name}」？将同时删除向量索引与图谱数据，不可恢复。`).then(async ok => {
           if (!ok) return;
           try { await Api.del(`/kbs/${v.kb.id}`); toast('已删除', 'success'); await this.reload(); this.render(); this.bind(); }
           catch (err) { toast(err.message, 'error'); }
         });
       }
     });
+    this.el.querySelector('#kbList').addEventListener('change', e => {
+      const input = e.target.closest('.kb-card-file');
+      if (!input || !input.files.length) return;
+      this.uploadFiles(Number(input.dataset.file), Array.from(input.files));
+      input.value = '';
+    });
+  },
+
+  /** 统一上传入口：前端拦截媒体（纯文本库）+ 详细结果（成功数/失败数/失败原因） */
+  async uploadFiles(kbId, files) {
+    const kb = this.kbs.find(x => x.kb.id === kbId);
+    const okFiles = [], blocked = [];
+    for (const f of files) {
+      const isMedia = /\.(png|jpe?g|gif|bmp|webp|mp4|mov|avi|mkv)$/i.test(f.name);
+      if (isMedia && kb && !kb.kb.multimodal) {
+        blocked.push({ fileName: f.name, reason: '当前知识库为纯文本模式，不接受图片/视频' });
+      } else {
+        okFiles.push(f);
+      }
+    }
+    if (!okFiles.length) {
+      this.showUploadResult([], blocked);
+      return;
+    }
+    try {
+      const res = await Api.uploadDetailed(kbId, okFiles);
+      this.showUploadResult(res.ok || [], (res.failed || []).concat(blocked));
+      await this.reload();
+      if (this.currentKb) this.loadDocs();
+      this.render();
+      this.bind();
+      this.startListPolling();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  },
+
+  showUploadResult(ok, failed) {
+    if (!failed.length) {
+      toast(`上传成功 ${ok.length} 个文档，开始处理`, 'success');
+      return;
+    }
+    const list = failed.map(f => `<div class="upload-fail-item"><span class="upload-fail-name">${Util.esc(f.fileName)}</span><span class="upload-fail-reason">${Util.esc(f.reason)}</span></div>`).join('');
+    openModal(`
+      <div class="modal-title">上传结果</div>
+      <div class="upload-result-sum">成功 <b style="color:var(--success)">${ok.length}</b> 个，失败 <b style="color:var(--danger)">${failed.length}</b> 个</div>
+      <div class="upload-fail-list">${list}</div>
+      <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">知道了</button></div>`);
+  },
+
+  /** 列表页轻量轮询：有进行中/待处理文档时刷新卡片状态 */
+  startListPolling() {
+    this.stopListPolling();
+    this.listPollTimer = setInterval(async () => {
+      if (!this.el.querySelector('#kbList')) { this.stopListPolling(); return; }
+      try {
+        const kbs = await Api.get('/kbs') || [];
+        const busy = kbs.some(v => v.processingDocs > 0 || v.pendingDocs > 0);
+        if (!busy) { this.stopListPolling(); return; }
+        const changed = JSON.stringify(kbs.map(v => [v.kb.id, v.docCount, v.chunkCount, v.processingDocs, v.pendingDocs, v.failedDocs])) !== JSON.stringify(this.kbs.map(v => [v.kb.id, v.docCount, v.chunkCount, v.processingDocs, v.pendingDocs, v.failedDocs]));
+        this.kbs = kbs;
+        if (changed) { this.render(); this.bind(); }
+      } catch (e) { this.stopListPolling(); }
+    }, 3000);
+  },
+
+  stopListPolling() {
+    if (this.listPollTimer) { clearInterval(this.listPollTimer); this.listPollTimer = null; }
   },
 
   catModal(cat) {
@@ -165,7 +298,7 @@ const KbView = {
     const providers = [];
     Api.get('/providers').then(list => {
       list.forEach(p => {
-        if (p.providerType !== 'local' && p.embeddingModel) providers.push(p);
+        if (p.enabled && p.providerType !== 'local' && p.embeddingModel) providers.push(p);
       });
       this._kbForm(kb, providers);
     }).catch(() => this._kbForm(kb, providers));
@@ -203,42 +336,63 @@ const KbView = {
         <div class="form-item">
           <label class="label">分块策略</label>
           <select class="select" id="kbStrategy">
+            <option value="paragraph" ${kb?.chunkStrategy === 'paragraph' ? 'selected' : ''}>按段落优先（推荐中文）</option>
             <option value="fixed" ${kb?.chunkStrategy !== 'paragraph' ? 'selected' : ''}>固定长度（按字符）</option>
-            <option value="paragraph" ${kb?.chunkStrategy === 'paragraph' ? 'selected' : ''}>按段落</option>
           </select>
         </div>
       </div>
       <div class="form-grid">
         <div class="form-item">
           <label class="label">分块大小</label>
-          <input class="input" type="number" id="kbChunkSize" value="${kb?.chunkSize ?? 600}" min="50" max="4000">
+          <input class="input" type="number" id="kbChunkSize" value="${kb?.chunkSize ?? 600}" min="100" max="4000">
+          <div class="form-hint" id="hint-kbChunkSize"></div>
         </div>
         <div class="form-item">
           <label class="label">重叠</label>
-          <input class="input" type="number" id="kbChunkOverlap" value="${kb?.chunkOverlap ?? 100}" min="0" max="1000">
+          <input class="input" type="number" id="kbChunkOverlap" value="${kb?.chunkOverlap ?? 100}" min="0" max="500">
+          <div class="form-hint" id="hint-kbChunkOverlap"></div>
+        </div>
+      </div>
+      <div class="form-item">
+        <label class="label">模式</label>
+        <div class="mode-radio">
+          <label class="radio-label"><input type="radio" name="kbMode" value="text" ${!kb?.multimodal ? 'checked' : ''}> 纯文本 <span class="hint">仅接受 txt / md / pdf / docx / doc</span></label>
+          <label class="radio-label"><input type="radio" name="kbMode" value="multimodal" ${kb?.multimodal ? 'checked' : ''}> 多模态 <span class="hint">接受图片 / 视频，需多模态模型</span></label>
         </div>
       </div>
       <div class="form-item" style="display:flex;gap:28px">
-        <label class="switch-label"><span class="switch"><input type="checkbox" id="kbMultimodal" ${kb?.multimodal ? 'checked' : ''}><span class="slider"></span></span> 多模态模式（接受图片/视频，需多模态模型）</label>
         <label class="switch-label"><span class="switch"><input type="checkbox" id="kbGraph" ${kb?.graphEnabled === false ? '' : 'checked'}><span class="slider"></span></span> 启用知识图谱</label>
       </div>
-      <div class="hint">纯文本模式仅接受 txt / md / pdf / docx / doc，图片视频将被拒绝并提示。</div>
       <div class="modal-foot">
         <button class="btn" onclick="closeModal()">取消</button>
         <button class="btn btn-primary" id="kbSave">保存</button>
       </div>`);
+    const validate = () => {
+      let ok = true;
+      const hint = (id, msg) => { const h = mask.querySelector('#hint-' + id); if (h) h.textContent = msg || ''; };
+      const csRaw = mask.querySelector('#kbChunkSize').value.trim();
+      const ovRaw = mask.querySelector('#kbChunkOverlap').value.trim();
+      const cs = Number(csRaw), ov = Number(ovRaw);
+      if (csRaw === '' || Number.isNaN(cs) || !Number.isInteger(cs) || cs < 100 || cs > 4000) { hint('kbChunkSize', '分块大小需为 100–4000 的整数'); ok = false; } else { hint('kbChunkSize', ''); }
+      if (ovRaw === '' || Number.isNaN(ov) || !Number.isInteger(ov) || ov < 0 || ov > 500) { hint('kbChunkOverlap', '重叠需为 0–500 的整数'); ok = false; } else if (cs >= 100 && cs <= 4000 && ov >= cs) { hint('kbChunkOverlap', '重叠必须小于分块大小'); ok = false; } else { hint('kbChunkOverlap', ''); }
+      return ok;
+    };
+    mask.querySelector('#kbChunkSize').oninput = validate;
+    mask.querySelector('#kbChunkOverlap').oninput = validate;
     mask.querySelector('#kbSave').onclick = async () => {
+      if (!validate()) { toast('参数不合法，请修正后保存', 'warn'); return; }
       const name = mask.querySelector('#kbName').value.trim();
       if (!name) { toast('请填写知识库名称', 'warn'); return; }
+      const mode = mask.querySelector('input[name="kbMode"]:checked').value;
       const body = {
         name,
         description: mask.querySelector('#kbDesc').value.trim(),
         categoryId: mask.querySelector('#kbCategory').value ? Number(mask.querySelector('#kbCategory').value) : null,
         embeddingProviderId: mask.querySelector('#kbEmbedding').value ? Number(mask.querySelector('#kbEmbedding').value) : null,
         chunkStrategy: mask.querySelector('#kbStrategy').value,
-        chunkSize: Number(mask.querySelector('#kbChunkSize').value) || 600,
-        chunkOverlap: Number(mask.querySelector('#kbChunkOverlap').value) || 100,
-        multimodal: mask.querySelector('#kbMultimodal').checked,
+        chunkSize: Number(mask.querySelector('#kbChunkSize').value),
+        chunkOverlap: Number(mask.querySelector('#kbChunkOverlap').value),
+        multimodal: mode === 'multimodal',
         graphEnabled: mask.querySelector('#kbGraph').checked
       };
       try {
@@ -324,15 +478,29 @@ const KbView = {
 
   bindDetail() {
     const self = this;
-    this.q('#kbBack').onclick = async () => { self.stopPolling(); await self.reload(); self.render(); self.bind(); };
+    this.q('#kbBack').onclick = async () => { self.stopPolling(); await self.reload(); self.render(); self.bind(); self.startListPolling(); };
     this.q('#kbUploadBtn').onclick = () => this.q('#kbFileInput').click();
     this.q('#kbFileInput').onchange = async e => {
       const files = Array.from(e.target.files);
       if (!files.length) return;
+      e.target.value = '';
+      const kb = this.currentKb && this.currentKb.kb;
+      const okFiles = [], blocked = [];
+      for (const f of files) {
+        const isMedia = /\.(png|jpe?g|gif|bmp|webp|mp4|mov|avi|mkv)$/i.test(f.name);
+        if (isMedia && kb && !kb.multimodal) {
+          blocked.push({ fileName: f.name, reason: '当前知识库为纯文本模式，不接受图片/视频' });
+        } else {
+          okFiles.push(f);
+        }
+      }
+      if (!okFiles.length) {
+        this.showUploadResult([], blocked);
+        return;
+      }
       try {
-        const uploaded = await Api.upload(this.currentKb.kb.id, files);
-        toast(`已上传 ${uploaded.length} 个文档，开始处理`, 'success');
-        e.target.value = '';
+        const res = await Api.uploadDetailed(this.currentKb.kb.id, okFiles);
+        this.showUploadResult(res.ok || [], (res.failed || []).concat(blocked));
         await this.loadDocs();
       } catch (err) {
         toast(err.message, 'error');

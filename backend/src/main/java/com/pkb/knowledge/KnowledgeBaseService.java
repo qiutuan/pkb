@@ -105,9 +105,14 @@ public class KnowledgeBaseService {
                 : (categoryDao.findById(kb.getCategoryId()) == null ? "" : categoryDao.findById(kb.getCategoryId()).getName());
         String providerName = kb.getEmbeddingProviderId() == null ? ""
                 : (providerDao.findById(kb.getEmbeddingProviderId()) == null ? "" : providerDao.findById(kb.getEmbeddingProviderId()).getName());
-        return new KbView(kb, categoryName, providerName, docCount, chunkCount, vectorCount);
+        // 文档索引状态统计（用于卡片状态徽标）
+        long pending = documentDao.countByKbAndStatus(kb.getId(), "PENDING");
+        long processing = documentDao.countByKbAndStatus(kb.getId(), "PROCESSING");
+        long failed = documentDao.countByKbAndStatus(kb.getId(), "FAILED");
+        return new KbView(kb, categoryName, providerName, docCount, chunkCount, vectorCount, pending, processing, failed);
     }
 
-    public record KbView(KnowledgeBase kb, String categoryName, String providerName, long docCount, long chunkCount, long vectorCount) {
+    public record KbView(KnowledgeBase kb, String categoryName, String providerName, long docCount, long chunkCount,
+                         long vectorCount, long pendingDocs, long processingDocs, long failedDocs) {
     }
 }

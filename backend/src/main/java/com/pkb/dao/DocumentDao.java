@@ -64,6 +64,11 @@ public class DocumentDao {
         return c == null ? 0 : c;
     }
 
+    public long countByKbAndStatus(long kbId, String status) {
+        Long c = jdbc.queryForObject("SELECT COUNT(*) FROM document WHERE kb_id = ? AND status = ?", Long.class, kbId, status);
+        return c == null ? 0 : c;
+    }
+
     public long countAll() {
         Long c = jdbc.queryForObject("SELECT COUNT(*) FROM document", Long.class);
         return c == null ? 0 : c;

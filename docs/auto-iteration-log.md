@@ -51,3 +51,18 @@
 
 ### 测试结果
 - `mvn test`：9/9 通过
+
+## R4 — 测试覆盖补强（2026-09-15）
+
+### 审计发现
+- 核心逻辑测试缺口：重排（HybridReranker）、引用解析（ChatService.citations）、设置读写（SettingsService）均无单测。
+- `ChatService.citations` 为 private，改为包级静态方法以便直接测试（不改 API 行为）。
+
+### 改动清单
+- `test: 新增 13 个用例（22 绿）`：
+  - HybridRerankerTest（关键词加权排序、topK 截断、负分钳位、空输入）
+  - CitationsTest（区间内引用、越界/非数字忽略、去重、预览截断 200 字）
+  - SettingsServiceTest（默认值、round-trip、resetKey 恢复默认、损坏文件容错）
+
+### 测试结果
+- `mvn test`：22/22 通过；`smoke-test.sh`：9/9 通过

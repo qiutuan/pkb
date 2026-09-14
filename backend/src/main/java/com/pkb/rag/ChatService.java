@@ -223,7 +223,8 @@ public class ChatService {
         return sb.toString();
     }
 
-    private List<Map<String, Object>> citations(String text, List<RetrievedChunk> chunks) {
+    /** 引用解析：[n] 标记 → 来源条目（index/docName/position/chunkId/kbId/source/content 预览） */
+    static List<Map<String, Object>> citations(String text, List<RetrievedChunk> chunks) {
         List<Map<String, Object>> out = new ArrayList<>();
         if (text == null || chunks.isEmpty()) {
             return out;

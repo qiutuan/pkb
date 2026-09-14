@@ -15,6 +15,7 @@ public record ProviderView(
         boolean defaultChat,
         boolean defaultEmbedding,
         boolean enabled,
+        String capabilities,
         String apiKeyMasked,
         boolean hasApiKey,
         String createdAt,

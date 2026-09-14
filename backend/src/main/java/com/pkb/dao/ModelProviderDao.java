@@ -23,24 +23,25 @@ public class ModelProviderDao {
     }
 
     private static final String COLS = "id, name, provider_type, base_url, api_key_enc, chat_model, embedding_model, "
-            + "temperature, max_tokens, default_chat, default_embedding, enabled, created_at, updated_at";
+            + "temperature, max_tokens, default_chat, default_embedding, enabled, capabilities, created_at, updated_at";
 
     public long insert(ModelProvider p) {
         String now = LocalDateTime.now().format(FMT);
         return JdbcUtil.insertAndGetKey(jdbc, "INSERT INTO model_provider (name, provider_type, base_url, api_key_enc, chat_model, embedding_model, "
-                        + "temperature, max_tokens, default_chat, default_embedding, enabled, created_at, updated_at) "
-                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        + "temperature, max_tokens, default_chat, default_embedding, enabled, capabilities, created_at, updated_at) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 p.getName(), p.getProviderType(), p.getBaseUrl(), p.getApiKeyEnc(), p.getChatModel(), p.getEmbeddingModel(),
                 p.getTemperature(), p.getMaxTokens(), bool(p.getDefaultChat()), bool(p.getDefaultEmbedding()),
-                bool(p.getEnabled()), now, now);
+                bool(p.getEnabled()), p.getCapabilities(), now, now);
     }
 
     public void update(ModelProvider p) {
         jdbc.update("UPDATE model_provider SET name=?, provider_type=?, base_url=?, api_key_enc=?, chat_model=?, "
-                        + "embedding_model=?, temperature=?, max_tokens=?, default_chat=?, default_embedding=?, enabled=?, updated_at=? WHERE id=?",
+                        + "embedding_model=?, temperature=?, max_tokens=?, default_chat=?, default_embedding=?, enabled=?, "
+                        + "capabilities=?, updated_at=? WHERE id=?",
                 p.getName(), p.getProviderType(), p.getBaseUrl(), p.getApiKeyEnc(), p.getChatModel(), p.getEmbeddingModel(),
                 p.getTemperature(), p.getMaxTokens(), bool(p.getDefaultChat()), bool(p.getDefaultEmbedding()),
-                bool(p.getEnabled()), LocalDateTime.now().format(FMT), p.getId());
+                bool(p.getEnabled()), p.getCapabilities(), LocalDateTime.now().format(FMT), p.getId());
     }
 
     public ModelProvider findById(long id) {
@@ -50,12 +51,18 @@ public class ModelProviderDao {
     }
 
     public List<ModelProvider> findAll() {
-        return jdbc.query("SELECT " + COLS + " FROM model_provider ORDER BY id", new BeanPropertyRowMapper<>(ModelProvider.class));
+        // 启用在前，其次按 id（新增 Provider 默认停用，列表按状态排序）
+        return jdbc.query("SELECT " + COLS + " FROM model_provider ORDER BY enabled DESC, id", new BeanPropertyRowMapper<>(ModelProvider.class));
     }
 
     public List<ModelProvider> findAllEnabled() {
         return jdbc.query("SELECT " + COLS + " FROM model_provider WHERE enabled = 1 ORDER BY id",
                 new BeanPropertyRowMapper<>(ModelProvider.class));
+    }
+
+    public void updateEnabled(long id, boolean enabled) {
+        jdbc.update("UPDATE model_provider SET enabled = ?, updated_at = ? WHERE id = ?",
+                enabled ? 1 : 0, LocalDateTime.now().format(FMT), id);
     }
 
     public void delete(long id) {

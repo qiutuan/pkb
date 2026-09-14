@@ -26,6 +26,8 @@ public class ModelProvider {
     private Boolean defaultChat;
     private Boolean defaultEmbedding;
     private Boolean enabled;
+    /** 模型能力，逗号分隔：text（文本）/ vision（多模态视觉） */
+    private String capabilities;
     private String createdAt;
     private String updatedAt;
 }

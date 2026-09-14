@@ -51,6 +51,13 @@ public class ModelProviderController {
         return ApiResponse.ok();
     }
 
+    /** 启用/停用（列表内联开关） */
+    @PostMapping("/{id}/status")
+    public ApiResponse<ProviderView> toggle(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        boolean enabled = Boolean.TRUE.equals(body.get("enabled"));
+        return ApiResponse.ok(service.toggle(id, enabled));
+    }
+
     @PostMapping("/{id}/test")
     public ApiResponse<Map<String, Object>> test(@PathVariable long id) {
         return ApiResponse.ok(service.test(id));

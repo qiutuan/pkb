@@ -79,6 +79,10 @@ public class ModelProviderService {
                 p.setApiKeyEnc(EncryptUtil.encrypt(plain, crypto.getKey()));
             }
             p.setApiKey(null);
+            // 新增 Provider 默认「停用」，用户手动开启后才可被调用
+            if (p.getEnabled() == null) {
+                p.setEnabled(false);
+            }
             boolean first = dao.count() == 0;
             if (first) {
                 p.setDefaultChat(p.getChatModel() != null && !p.getChatModel().isBlank());
@@ -95,6 +99,12 @@ public class ModelProviderService {
             ModelProvider old = dao.findById(p.getId());
             if (old == null) {
                 throw new BusinessException("模型不存在");
+            }
+            // 停用保护：默认聊天 / 默认向量不可停用
+            if (!Boolean.TRUE.equals(p.getEnabled()) && Boolean.TRUE.equals(old.getEnabled())) {
+                if (Boolean.TRUE.equals(old.getDefaultChat()) || Boolean.TRUE.equals(old.getDefaultEmbedding())) {
+                    throw new BusinessException("默认聊天 / 默认向量的模型不可停用，请先转移默认身份");
+                }
             }
             // apiKey 为空表示不修改
             if (p.getApiKey() != null && !p.getApiKey().isBlank()) {
@@ -115,10 +125,27 @@ public class ModelProviderService {
         return toView(dao.findById(p.getId()));
     }
 
+    /** 启用/停用（列表内联开关）；默认聊天/向量不可停用 */
+    public ProviderView toggle(long id, boolean enabled) {
+        ModelProvider p = dao.findById(id);
+        if (p == null) {
+            throw new BusinessException("模型不存在");
+        }
+        if (!enabled && (Boolean.TRUE.equals(p.getDefaultChat()) || Boolean.TRUE.equals(p.getDefaultEmbedding()))) {
+            throw new BusinessException("默认聊天 / 默认向量的模型不可停用，请先转移默认身份");
+        }
+        dao.updateEnabled(id, enabled);
+        factory.invalidate(id);
+        return toView(dao.findById(id));
+    }
+
     public void delete(long id) {
         ModelProvider p = dao.findById(id);
         if (p == null) {
             throw new BusinessException("模型不存在");
+        }
+        if (Boolean.TRUE.equals(p.getDefaultChat()) || Boolean.TRUE.equals(p.getDefaultEmbedding())) {
+            throw new BusinessException("默认聊天 / 默认向量的模型不可删除，请先转移默认身份");
         }
         dao.delete(id);
         factory.invalidate(id);
@@ -243,6 +270,19 @@ public class ModelProviderService {
         if (p.getProviderType() == null || !TYPES.contains(p.getProviderType())) {
             throw new BusinessException("不支持的模型类型");
         }
+        // 能力默认：文本
+        if (p.getCapabilities() == null || p.getCapabilities().isBlank()) {
+            p.setCapabilities("text");
+        } else {
+            List<String> caps = new ArrayList<>();
+            for (String c : p.getCapabilities().split(",")) {
+                String t = c.trim();
+                if (!t.isEmpty() && !caps.contains(t)) {
+                    caps.add(t);
+                }
+            }
+            p.setCapabilities(String.join(",", caps));
+        }
         if ("local".equals(p.getProviderType())) {
             p.setBaseUrl(null);
             p.setChatModel(null);
@@ -252,11 +292,23 @@ public class ModelProviderService {
         boolean hasChat = p.getChatModel() != null && !p.getChatModel().isBlank();
         boolean hasEmbed = p.getEmbeddingModel() != null && !p.getEmbeddingModel().isBlank();
         if (!hasChat && !hasEmbed) {
-            throw new BusinessException("请至少填写聊天模型或 Embedding 模型");
+            throw new BusinessException("同一提供商需同时配置聊天模型与向量模型");
         }
-        // Anthropic 不提供 Embedding 接口
-        if ("anthropic".equals(p.getProviderType()) && hasEmbed) {
+        // 同一 Provider 不允许只配置单一模型（聊天 + 向量 均需填写）
+        if (!hasChat) {
+            throw new BusinessException("同一提供商需同时配置聊天模型与向量模型（聊天模型必填）");
+        }
+        // Anthropic 不提供 Embedding 接口：仅需聊天模型
+        if ("anthropic".equals(p.getProviderType())) {
             p.setEmbeddingModel(null);
+            return;
+        }
+        // Ollama 例外：可共用本地内置向量模型，允许 Embedding 为空
+        if ("ollama".equals(p.getProviderType()) && !hasEmbed) {
+            return;
+        }
+        if (!hasEmbed) {
+            throw new BusinessException("同一提供商需同时配置聊天模型与向量模型（向量模型必填）");
         }
     }
 
@@ -274,6 +326,7 @@ public class ModelProviderService {
                 p.getChatModel(), p.getEmbeddingModel(), p.getTemperature(), p.getMaxTokens(),
                 Boolean.TRUE.equals(p.getDefaultChat()), Boolean.TRUE.equals(p.getDefaultEmbedding()),
                 Boolean.TRUE.equals(p.getEnabled()),
+                p.getCapabilities() == null || p.getCapabilities().isBlank() ? "text" : p.getCapabilities(),
                 hasKey ? EncryptUtil.mask(EncryptUtil.decrypt(p.getApiKeyEnc(), crypto.getKey())) : "",
                 hasKey, p.getCreatedAt(), p.getUpdatedAt());
     }

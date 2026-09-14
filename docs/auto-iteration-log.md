@@ -83,3 +83,15 @@
 
 ### 测试结果
 - `mvn test`：22/22 通过；手动验证导出接口（含来源引用渲染）
+
+## R6 — 可扩展性与文档一致性审计（2026-09-15）
+
+### 审计结论（可扩展性）
+- 抽象边界清晰：`VectorStore` / `ChatProvider`(经 ModelFactory) / `ChunkSplitter` / `Reranker` 均为接口，
+  替换实现不改业务代码；向量库 embedded ↔ pgvector 仅改配置（README 有对照表）。
+- 新增一类 Provider 需动 3 处（ModelFactory 的 chat/streaming/embedding 三个 switch + 前端类型下拉），
+  对轻量个人项目可接受，已记录为扩展点（morning-report 提示）。
+
+### 文档一致性修正
+- README 快速验收脚本的上传路由改为现行主路由 `/kbs/{id}/documents/upload`（旧路由保留兼容）
+- README 配置块补充 `pkb.pipeline`（workers/queue-capacity/max-upload-mb/max-upload-files），与 application.yml 对齐

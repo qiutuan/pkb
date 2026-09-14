@@ -47,7 +47,7 @@ java -jar target/pkb.jar
 ```bash
 # 建库、传文档、检索，全部走 API，无需浏览器
 curl -X POST localhost:8080/api/kbs -H 'Content-Type: application/json' -d '{"name":"示例库"}'
-curl -X POST localhost:8080/api/kbs/1/documents -F "files=@/path/to/中文文档.md"
+curl -X POST localhost:8080/api/kbs/1/documents/upload -F "files=@/path/to/中文文档.md"
 curl -s 'localhost:8080/api/retrieval' -H 'Content-Type: application/json' \
   -d '{"query":"你的问题","kbIds":[1],"topK":5}'
 ```
@@ -107,6 +107,11 @@ pkb:
     graph-extract-batch: 4
     graph-extract-on-index: true
     graph-entity-merge-threshold: 0.92
+  pipeline:                   # 入库流水线
+    workers: 2
+    queue-capacity: 200
+    max-upload-mb: 200        # 单文件上传上限（MB）
+    max-upload-files: 50      # 单次上传文件数量上限
 ```
 
 ### 环境变量别名（docker-compose 注入用）

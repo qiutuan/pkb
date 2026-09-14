@@ -3,7 +3,10 @@ package com.pkb.rag;
 import com.pkb.common.ApiResponse;
 import com.pkb.common.BusinessException;
 import com.pkb.dao.ChatDao;
+import com.pkb.util.JsonUtil;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -83,6 +88,41 @@ public class ChatController {
     @GetMapping("/sessions/{id}/messages")
     public ApiResponse<List<ChatMessage>> messages(@PathVariable long id) {
         return ApiResponse.ok(chatDao.messages(id));
+    }
+
+    /** 导出会话为 Markdown（含来源引用），本地文件下载 */
+    @GetMapping("/sessions/{id}/export")
+    public ResponseEntity<String> exportMarkdown(@PathVariable long id) {
+        ChatSession session = chatDao.findSession(id);
+        if (session == null) {
+            throw new BusinessException("会话不存在");
+        }
+        StringBuilder md = new StringBuilder();
+        md.append("# ").append(session.getTitle() == null ? "未命名会话" : session.getTitle()).append("\n\n");
+        md.append("> 导出时间：").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))).append("\n\n---\n\n");
+        for (ChatMessage m : chatDao.messages(id)) {
+            if ("user".equals(m.getRole())) {
+                md.append("## 我\n\n").append(m.getContent()).append("\n\n");
+            } else {
+                md.append("## PKB\n\n").append(m.getContent() == null ? "" : m.getContent()).append("\n\n");
+                List<Map<String, Object>> sources = JsonUtil.fromJson(m.getSources(), new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+                if (!sources.isEmpty()) {
+                    md.append("**引用来源：**\n\n");
+                    for (Map<String, Object> s : sources) {
+                        Object name = s.get("docName");
+                        Object pos = s.get("position");
+                        md.append("- ").append(name == null ? "未知文档" : name)
+                                .append(pos == null ? "" : "（片段 " + pos + "）").append("\n");
+                    }
+                    md.append("\n");
+                }
+            }
+        }
+        String fileName = (session.getTitle() == null ? "session" : session.getTitle()).replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + fileName + ".md")
+                .contentType(MediaType.parseMediaType("text/markdown;charset=UTF-8"))
+                .body(md.toString());
     }
 
     /** 流式对话（SSE） */

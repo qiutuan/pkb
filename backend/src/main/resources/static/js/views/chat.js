@@ -124,6 +124,7 @@ const ChatView = {
         <span class="s-title">${Util.esc(s.title || '新对话')}</span>
         <span class="s-ops">
           <button class="rename" data-rename="${s.id}" title="重命名">✎</button>
+          <button class="export" data-export="${s.id}" title="导出 Markdown">⤓</button>
           <button class="danger" data-del="${s.id}" title="删除会话">✕</button>
         </span>
       </div>`).join('');
@@ -175,6 +176,29 @@ const ChatView = {
       this.messages = [];
       this.renderSessions();
       this.renderMessages();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  },
+
+  /** 导出会话为 Markdown（含来源引用） */
+  async exportSession(id) {
+    try {
+      const resp = await fetch(`/api/chat/sessions/${id}/export`, { headers: Api.jsonHeaders() });
+      if (!resp.ok) throw new Error('导出失败（' + resp.status + '）');
+      const text = await resp.text();
+      const s = this.sessions.find(x => x.id === id) || {};
+      const name = (s.title || '会话').replace(/[\\/:*?"<>|\s]+/g, '_');
+      const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name + '.md';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast('已导出 Markdown', 'success');
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -297,10 +321,11 @@ const ChatView = {
     this.q('#chatGraphRag').onchange = e => { this.state.graphRag = e.target.checked; };
     this.q('#chatRetrieveTest').onclick = () => this.testRetrieve();
 
-    // 会话列表：打开 / 重命名 / 删除
+    // 会话列表：打开 / 重命名 / 导出 / 删除
     this.q('#chatSessionList').addEventListener('click', e => {
       const rename = e.target.closest('[data-rename]');
       const del = e.target.closest('[data-del]');
+      const exp = e.target.closest('[data-export]');
       const item = e.target.closest('.chat-session-item');
       if (del) {
         e.stopPropagation();
@@ -314,6 +339,11 @@ const ChatView = {
             this.renderMessages();
           } catch (err) { toast(err.message, 'error'); }
         });
+        return;
+      }
+      if (exp) {
+        e.stopPropagation();
+        this.exportSession(Number(exp.dataset.export));
         return;
       }
       if (rename) {

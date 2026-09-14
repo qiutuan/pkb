@@ -87,6 +87,10 @@ public class ChatService {
 
             // 保存用户消息（历史仅持久化原始问题，上下文在每次请求时重组）
             chatDao.insertMessage(sessionId, "user", req.query(), "[]");
+            // 会话模型记忆：请求指定则写入会话
+            if (req.modelProviderId() != null && req.modelProviderId() > 0) {
+                chatDao.setSessionModel(sessionId, req.modelProviderId());
+            }
             ChatSession session = chatDao.findSession(sessionId);
             if (session != null && (session.getTitle() == null || "新对话".equals(session.getTitle()))) {
                 String t = req.query().trim();
@@ -125,8 +129,8 @@ public class ChatService {
             }
             msgs.add(userMsg);
 
-            // 流式生成
-            ModelProvider provider = providerService.defaultChatProvider();
+            // 流式生成：会话记忆模型 > 请求指定模型 > 默认聊天模型
+            ModelProvider provider = resolveChatProvider(sessionId, req.modelProviderId());
             StreamingChatModel model = factory.streamingModel(provider);
             StringBuilder acc = new StringBuilder();
             model.chat(ChatRequest.builder().messages(msgs).build(), new StreamingChatResponseHandler() {
@@ -171,8 +175,26 @@ public class ChatService {
         }
     }
 
-    private String buildContext(List<RetrievedChunk> chunks, String query) {
-        StringBuilder sb = new StringBuilder();
+    /** 解析聊天模型：请求指定（需启用且有聊天模型）→ 会话记忆 → 默认 */
+    private ModelProvider resolveChatProvider(long sessionId, Long reqProviderId) {
+        Long pid = reqProviderId;
+        if (pid == null || pid <= 0) {
+            ChatSession session = chatDao.findSession(sessionId);
+            if (session != null && session.getModelProviderId() != null && session.getModelProviderId() > 0) {
+                pid = session.getModelProviderId();
+            }
+        }
+        if (pid != null && pid > 0) {
+            ModelProvider p = providerService.requireEnabled(pid);
+            if (p.getChatModel() == null || p.getChatModel().isBlank()) {
+                throw new BusinessException("所选 Provider 未配置聊天模型");
+            }
+            return p;
+        }
+        return providerService.defaultChatProvider();
+    }
+
+    private String buildContext(List<RetrievedChunk> chunks, String query) {        StringBuilder sb = new StringBuilder();
         if (!chunks.isEmpty()) {
             sb.append("【参考资料】\n");
             for (int i = 0; i < chunks.size(); i++) {

@@ -13,6 +13,8 @@ public record ChatStreamRequest(
         Double minScore,
         String rerank,
         Boolean graphRag,
+        /** 会话指定聊天模型 Provider id（可选，写入会话记忆） */
+        Long modelProviderId,
         String imageBase64,
         String imageMime) {
 }

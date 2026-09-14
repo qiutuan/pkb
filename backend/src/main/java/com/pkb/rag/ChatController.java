@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,6 +48,27 @@ public class ChatController {
         }
         chatDao.deleteSession(id);
         return ApiResponse.ok();
+    }
+
+    @PutMapping("/sessions/{id}")
+    public ApiResponse<ChatSession> renameSession(@PathVariable long id, @RequestBody Map<String, String> body) {
+        if (chatDao.findSession(id) == null) {
+            throw new BusinessException("会话不存在");
+        }
+        String title = body == null ? null : body.get("title");
+        chatDao.updateSessionTitle(id, title == null || title.isBlank() ? "新对话" : title.trim());
+        return ApiResponse.ok(chatDao.findSession(id));
+    }
+
+    /** 会话记忆：指定该会话使用的聊天模型 */
+    @PostMapping("/sessions/{id}/model")
+    public ApiResponse<ChatSession> setSessionModel(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        if (chatDao.findSession(id) == null) {
+            throw new BusinessException("会话不存在");
+        }
+        Object pid = body == null ? null : body.get("providerId");
+        chatDao.setSessionModel(id, pid == null ? null : Long.valueOf(String.valueOf(pid)));
+        return ApiResponse.ok(chatDao.findSession(id));
     }
 
     @PostMapping("/sessions/{id}/clear")

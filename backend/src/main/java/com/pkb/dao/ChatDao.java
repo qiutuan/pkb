@@ -31,14 +31,19 @@ public class ChatDao {
     }
 
     public ChatSession findSession(long id) {
-        List<ChatSession> list = jdbc.query("SELECT id, title, created_at, updated_at FROM chat_session WHERE id=?",
+        List<ChatSession> list = jdbc.query("SELECT id, title, model_provider_id, created_at, updated_at FROM chat_session WHERE id=?",
                 new BeanPropertyRowMapper<>(ChatSession.class), id);
         return list.isEmpty() ? null : list.get(0);
     }
 
     public List<ChatSession> listSessions() {
-        return jdbc.query("SELECT id, title, created_at, updated_at FROM chat_session ORDER BY updated_at DESC",
+        return jdbc.query("SELECT id, title, model_provider_id, created_at, updated_at FROM chat_session ORDER BY updated_at DESC",
                 new BeanPropertyRowMapper<>(ChatSession.class));
+    }
+
+    public void setSessionModel(long id, Long providerId) {
+        jdbc.update("UPDATE chat_session SET model_provider_id=?, updated_at=? WHERE id=?",
+                providerId, LocalDateTime.now().format(FMT), id);
     }
 
     public void updateSessionTitle(long id, String title) {

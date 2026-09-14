@@ -70,6 +70,10 @@ public class PkbProperties {
         private String systemPrompt = "";
         private String extractPrompt = "";
         private String graphPrompt = "";
+        /** 图谱构建 Prompt：实体合并去重决策 */
+        private String graphBuildPrompt = "";
+        /** 图谱抽取专用模型 Provider id；0 表示跟随默认聊天模型 */
+        private long graphExtractProvider = 0;
         private Chunk chunk = new Chunk();
         private Rag rag = new Rag();
         private Graph graph = new Graph();
@@ -90,6 +94,12 @@ public class PkbProperties {
             return graphPrompt == null || graphPrompt.isBlank()
                     ? "结合知识图谱中的实体关系组织回答。"
                     : graphPrompt;
+        }
+
+        public String getGraphBuildPromptOrDefault() {
+            return graphBuildPrompt == null || graphBuildPrompt.isBlank()
+                    ? "你是知识图谱构建引擎。请判断两个实体名称是否指向同一真实事物（考虑简称、别名、中英文译名），只输出 JSON：{\"merge\":true或false,\"reason\":\"不超过 20 字的原因\"}。"
+                    : graphBuildPrompt;
         }
     }
 

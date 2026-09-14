@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
 
 /**
  * 启动时初始化 SQLite 表结构，并准备本地加密密钥。
@@ -40,6 +41,7 @@ public class DatabaseInitializer {
                 default_chat INTEGER DEFAULT 0,
                 default_embedding INTEGER DEFAULT 0,
                 enabled INTEGER DEFAULT 1,
+                capabilities TEXT DEFAULT 'text',
                 created_at TEXT,
                 updated_at TEXT
             )
@@ -49,6 +51,7 @@ public class DatabaseInitializer {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 parent_id INTEGER DEFAULT 0,
                 name TEXT NOT NULL,
+                sort_order INTEGER DEFAULT 0,
                 created_at TEXT
             )
             """,
@@ -101,6 +104,7 @@ public class DatabaseInitializer {
             CREATE TABLE IF NOT EXISTS chat_session (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT DEFAULT '新对话',
+                model_provider_id INTEGER,
                 created_at TEXT,
                 updated_at TEXT
             )
@@ -167,6 +171,7 @@ public class DatabaseInitializer {
         for (String sql : DDL) {
             jdbc.execute(sql);
         }
+        migrate();
         Path dataDir = Paths.get(props.getDataDir()).toAbsolutePath().normalize();
         try {
             Files.createDirectories(dataDir);
@@ -174,5 +179,31 @@ public class DatabaseInitializer {
             throw new IllegalStateException("无法创建数据目录 " + dataDir, e);
         }
         log.info("数据库初始化完成，数据目录: {}", dataDir);
+    }
+
+    /** 旧库升级：为已有表补充新增列（SQLite 无 IF NOT EXISTS 加列，需探测） */
+    private void migrate() {
+        addColumnIfMissing("model_provider", "capabilities", "TEXT DEFAULT 'text'");
+        addColumnIfMissing("chat_session", "model_provider_id", "INTEGER");
+        addColumnIfMissing("category", "sort_order", "INTEGER DEFAULT 0");
+    }
+
+    private void addColumnIfMissing(String table, String column, String ddl) {
+        boolean exists = false;
+        try {
+            List<java.util.Map<String, Object>> cols = jdbc.queryForList("PRAGMA table_info(" + table + ")");            for (java.util.Map<String, Object> row : cols) {
+                if (column.equals(String.valueOf(row.get("name")))) {
+                    exists = true;
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            // 表不存在则跳过
+            return;
+        }
+        if (!exists) {
+            jdbc.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + ddl);
+            log.info("已为表 {} 补充列 {}", table, column);
+        }
     }
 }

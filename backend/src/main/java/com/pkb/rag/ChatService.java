@@ -144,16 +144,19 @@ public class ChatService {
 
                 @Override
                 public void onCompleteResponse(ChatResponse resp) {
-                    if (finished[0]) {
-                        return;
-                    }
+                    boolean disconnected = finished[0];
                     finished[0] = true;
                     String text = acc.toString();
                     List<Map<String, Object>> sources = citations(text, chunks);
+                    // 无论是否断开都持久化已生成内容，避免留下只有用户消息的断裂历史
                     chatDao.insertMessage(sessionId, "assistant", text, JsonUtil.toJson(sources));
                     chatDao.touchSession(sessionId);
-                    send(emitter, finished, Map.of("type", "done", "sessionId", sessionId,
-                            "content", text, "sources", sources));
+                    if (!disconnected) {
+                        send(emitter, finished, Map.of("type", "done", "sessionId", sessionId,
+                                "content", text, "sources", sources));
+                    } else {
+                        log.debug("SSE 已断开，仅持久化已生成内容（{} 字）", text.length());
+                    }
                     emitter.complete();
                 }
 
@@ -163,6 +166,12 @@ public class ChatService {
                         return;
                     }
                     finished[0] = true;
+                    String text = acc.toString();
+                    if (!text.isBlank()) {
+                        // 生成中途出错：保存已生成的部分，避免历史断裂
+                        chatDao.insertMessage(sessionId, "assistant", text, JsonUtil.toJson(citations(text, chunks)));
+                        chatDao.touchSession(sessionId);
+                    }
                     send(emitter, finished, Map.of("type", "error",
                             "message", err.getMessage() == null ? "生成失败" : err.getMessage()));
                     emitter.complete();

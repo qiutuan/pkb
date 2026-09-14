@@ -201,13 +201,20 @@ public class DocumentPipelineService {
         return parser.parse(Paths.get(doc.getFilePath()));
     }
 
-    /** 用多模态聊天模型描述媒体内容用于向量化（不做自研 OCR/抽帧） */
+    /** 用多模态聊天模型描述媒体内容用于向量化（不做自研 OCR/抽帧）；大文件仅索引文件名防 OOM */
+    private static final long MAX_MEDIA_DESCRIBE_BYTES = 8L * 1024 * 1024;
+
     private String describeMedia(Document doc) {
         String fileName = doc.getFileName();
-        String fallback = "【媒体文件】文件名：" + fileName + "（当前模型暂无法理解该媒体内容，仅索引文件名）";
+        String fallback = "【媒体文件】文件名：" + fileName + "（文件较大或模型暂无法理解，仅索引文件名）";
         try {
-            ModelProvider chat = providerService.defaultChatProvider();
             Path path = Paths.get(doc.getFilePath());
+            long size = Files.size(path);
+            if (size > MAX_MEDIA_DESCRIBE_BYTES) {
+                log.info("媒体文件过大（{} MB），仅索引文件名: {}", size / 1024 / 1024, fileName);
+                return fallback;
+            }
+            ModelProvider chat = providerService.defaultChatProvider();
             byte[] bytes = Files.readAllBytes(path);
             String b64 = Base64.getEncoder().encodeToString(bytes);
             String mime = mimeByExt(fileName);

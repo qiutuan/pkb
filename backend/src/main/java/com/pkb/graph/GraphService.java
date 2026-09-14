@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -200,6 +201,71 @@ public class GraphService {
             }
         }
         return Map.of("nodes", nodes, "links", links, "matched", new ArrayList<>(focus));
+    }
+
+    /**
+     * 多知识库合并图谱数据：节点以 "kbId:entityId" 复合 id 去重合并，保留单库接口不变。
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> multiGraphData(List<Long> kbIds, String query) {
+        Map<String, Map<String, Object>> nodeById = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> linkKey = new LinkedHashMap<>();
+        Set<String> matched = new LinkedHashSet<>();
+        // 第一遍：聚合节点（复合 id）
+        for (long kbId : kbIds) {
+            Map<String, Object> data = graphData(kbId, query);
+            for (Map<String, Object> nd : (List<Map<String, Object>>) data.getOrDefault("nodes", List.of())) {
+                long eid = ((Number) nd.get("id")).longValue();
+                String key = kbId + ":" + eid;
+                Map<String, Object> merged = nodeById.get(key);
+                if (merged == null) {
+                    nd.put("id", key);
+                    nd.put("_kid", kbId);
+                    nd.put("_eid", eid);
+                    nodeById.put(key, nd);
+                } else {
+                    merged.put("degree", Math.max(((Number) merged.getOrDefault("degree", 0)).intValue(),
+                            ((Number) nd.getOrDefault("degree", 0)).intValue()));
+                }
+            }
+            for (Object m : (List<Object>) data.getOrDefault("matched", List.of())) {
+                matched.add(String.valueOf(m));
+            }
+        }
+        // 第二遍：聚合边（仅保留两端节点均展示的边，按复合 id 对去重）
+        for (long kbId : kbIds) {
+            Map<String, Object> data = graphData(kbId, query);
+            for (Map<String, Object> lk : (List<Map<String, Object>>) data.getOrDefault("links", List.of())) {
+                String sk = kbId + ":" + ((Number) lk.get("source")).longValue();
+                String tk = kbId + ":" + ((Number) lk.get("target")).longValue();
+                if (!nodeById.containsKey(sk) || !nodeById.containsKey(tk)) {
+                    continue;
+                }
+                String lkey = sk.compareTo(tk) < 0 ? sk + "→" + tk : tk + "→" + sk;
+                if (!linkKey.containsKey(lkey)) {
+                    Map<String, Object> link = new HashMap<>();
+                    link.put("source", sk);
+                    link.put("target", tk);
+                    link.put("type", lk.get("type"));
+                    link.put("description", lk.get("description"));
+                    linkKey.put(lkey, link);
+                }
+            }
+        }
+        return Map.of("nodes", new ArrayList<>(nodeById.values()),
+                "links", new ArrayList<>(linkKey.values()),
+                "matched", new ArrayList<>(matched));
+    }
+
+    /** 多知识库合并统计 */
+    public Map<String, Object> multiStats(List<Long> kbIds) {
+        long entities = 0, relations = 0, chunks = 0;
+        for (long kbId : kbIds) {
+            entities += graphDao.countEntities(kbId);
+            relations += graphDao.countRelations(kbId);
+            chunks += chunkDao.countByKb(kbId);
+        }
+        return Map.of("kbIds", kbIds, "entities", entities, "relations", relations, "chunks", chunks);
     }
 
     /** 实体溯源片段 */

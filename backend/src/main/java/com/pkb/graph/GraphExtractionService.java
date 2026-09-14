@@ -67,7 +67,7 @@ public class GraphExtractionService {
     }
 
     private void processBatch(KnowledgeBase kb, List<Long> chunkIds, List<String> texts) {
-        ModelProvider chat = providerService.defaultChatProvider();
+        ModelProvider chat = extractionProvider();
         ChatModel model = factory.chatModel(chat);
 
         StringBuilder sb = new StringBuilder();
@@ -167,11 +167,18 @@ public class GraphExtractionService {
             }
             return existing;
         }
-        // 模糊合并：相似度超过阈值则并入已有实体
+        // 模糊合并：相似度超过阈值则并入已有实体；处于模糊区间时交由「图谱构建 Prompt」的 LLM 决策
         String norm = TextUtil.normalizeName(name);
         for (GraphEntity cand : graphDao.searchEntitiesByName(kb.getId(), name.substring(0, Math.min(2, name.length())))) {
-            if (TextUtil.levenshteinSimilarity(norm, TextUtil.normalizeName(cand.getName())) >= threshold) {
+            double sim = TextUtil.levenshteinSimilarity(norm, TextUtil.normalizeName(cand.getName()));
+            if (sim >= threshold) {
                 return cand;
+            }
+            if (sim >= threshold - 0.15) {
+                Boolean same = askMergeDecision(kb, name, cand);
+                if (Boolean.TRUE.equals(same)) {
+                    return cand;
+                }
             }
         }
         GraphEntity ne = new GraphEntity();
@@ -193,6 +200,41 @@ public class GraphExtractionService {
             graphDao.saveEntityEmbedding(e.getId(), VecCodec.toBytes(vec));
         } catch (Exception ex) {
             log.debug("实体向量化跳过: {} ({})", e.getName(), ex.getMessage());
+        }
+    }
+
+    /** 抽取专用模型：设置页指定（需启用且有聊天模型）→ 否则默认聊天模型 */
+    private ModelProvider extractionProvider() {
+        long pid = settings.graphExtractProvider();
+        if (pid > 0) {
+            return providerService.requireEnabled(pid);
+        }
+        return providerService.defaultChatProvider();
+    }
+
+    /** 使用「图谱构建 Prompt」让 LLM 判断两个实体是否合并；任何失败返回 null（不合并，不阻塞流程） */
+    private Boolean askMergeDecision(KnowledgeBase kb, String name, GraphEntity cand) {
+        try {
+            ChatModel model = factory.chatModel(extractionProvider());
+            String user = "实体 A：" + name + "\n实体 B：" + cand.getName()
+                    + "\n\n请判断 A 与 B 是否为同一事物，只输出 JSON。";
+            String resp = model.chat(ChatRequest.builder().messages(List.of(
+                            SystemMessage.from(settings.graphBuildPrompt()),
+                            UserMessage.from(user)))
+                    .build()).aiMessage().text();
+            String json = JsonUtil.extractFirstJsonObject(resp);
+            if (json == null) {
+                return null;
+            }
+            Map<String, Object> m = JsonUtil.fromJson(json, Map.class);
+            Object v = m == null ? null : m.get("merge");
+            if (v == null) {
+                return null;
+            }
+            return "true".equalsIgnoreCase(String.valueOf(v).trim());
+        } catch (Exception e) {
+            log.debug("实体合并决策跳过: {} ≈ {} ({})", name, cand.getName(), e.getMessage());
+            return null;
         }
     }
 

@@ -21,3 +21,17 @@
 ### 测试结果
 - `mvn test`：9/9 通过
 - `bash smoke-test.sh`：走通 README 快速验收链路
+
+## R2 — 安全性审计（2026-09-15）
+
+### 审计结论
+- **XSS**：前端 Markdown 渲染先整体转义再做标记替换（md.js esc）；会话标题/文档名/Provider 名等用户内容渲染均经 Util.esc —— 未发现可利用注入点。
+- **路径穿越**：`TextUtil.safeFileName` 剔除 `\/:*?"<>|` 与空白，磁盘路径安全。
+- **API Key**：AES-GCM 加密落盘（.secret），视图仅返回掩码；未发现日志打印明文 Key。
+- **暴露面**：无 actuator / h2-console；单机单用户无 CORS 配置（同源访问，接受为设计）。
+- **SQL 注入**：全部 JDBC 参数化。
+- **发现 1 个低危 Bug**：`/documents/{id}/file` 的 Content-Disposition 直接拼原始文件名，
+  文件名含 CR/LF 时可响应头注入 —— 已修复（剔除换行）。
+
+### 改动清单
+- `fix: 文档下载响应头剔除 CR/LF，防响应头注入`

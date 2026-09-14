@@ -216,8 +216,10 @@ public class DocumentController {
             throw new BusinessException("文件不存在");
         }
         Path path = Paths.get(doc.getFilePath());
+        // 防响应头注入：文件名中的 CR/LF 一律剔除
+        String dispName = doc.getFileName() == null ? "file" : doc.getFileName().replaceAll("[\\r\\n]+", " ");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + doc.getFileName())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + dispName)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(new FileSystemResource(path));
     }

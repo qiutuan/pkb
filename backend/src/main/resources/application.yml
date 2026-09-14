@@ -1,0 +1,85 @@
+server:
+  port: 8080
+  # 长连接 SSE 流式响应
+  tomcat:
+    max-swallow-size: -1
+
+spring:
+  application:
+    name: pkb
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 600MB
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+
+pkb:
+  # 数据目录：所有本地数据（SQLite、上传文件、密钥）都放在这里
+  data-dir: ./data
+  # 向量存储模式：embedded（内置 SQLite + HNSW/Flat，零依赖默认） | pgvector（PostgreSQL + pgvector）
+  vector:
+    mode: embedded
+    embedded:
+      algorithm: hnsw          # hnsw | flat
+      hnsw:
+        m: 16                  # HNSW 每层最大邻居数
+        ef-construction: 200   # 建索引时的候选集大小
+        ef-search: 128         # 检索时的候选集大小（越大召回越高，毫秒级开销）
+        seed: 42
+    pgvector:
+      host: localhost
+      port: 5432
+      database: pkb
+      username: pkb
+      password: pkb
+      table-prefix: pkb_vectors_
+  pipeline:
+    workers: 2                 # 文档处理流水线并发数
+    queue-capacity: 200
+  # API Key 加密密钥：留空则首次启动自动生成并保存到 <data-dir>/.secret（也可用环境变量 PKB_ENCRYPT_KEY 注入）
+  security:
+    encrypt-key: ""
+
+  # ===== 默认参数（均可被界面 / data/settings.yml 覆盖）=====
+  defaults:
+    system-prompt: |-
+      你是一个严谨的个人知识库问答助手，请基于提供的【参考资料】回答用户问题。
+
+      规则：
+      1. 优先使用【参考资料】中的内容作答，引用时在句末标注来源编号，格式如 [1]、[2]，可多个合并如 [1][3]。
+      2. 若参考资料不足以回答问题，请明确说明"根据现有资料无法完整回答"，并基于已有信息给出部分回答，不要编造内容。
+      3. 回答使用中文，结构清晰、重点突出；涉及步骤、对比、分类时，可使用列表或表格。
+      4. 不要提及"参考资料"本身的存在形式，只回答问题。
+    extract-prompt: |-
+      你是一个知识图谱抽取引擎，从给定文本中抽取重要实体以及它们之间的关系。
+
+      实体类型建议：人物、组织、产品、技术、概念、地点、事件、行业、文献（也可使用其他简洁类型）。
+      规则：
+      1. 只抽取文本中明确出现或可明确推断的实体与关系，绝不编造。
+      2. 实体名称使用文本中的原始表述，保持简短（不超过 30 字）。
+      3. 关系使用动词或短语，例如"发布"、"投资"、"位于"、"属于"、"研发"、"合作"。
+      4. 每个实体给出 30 字以内的描述；每条关系给出 30 字以内的描述。
+      5. 只输出 JSON，不要输出任何其他内容。
+      输出格式：{"entities":[{"name":"实体名","type":"类型","description":"描述"}],"relations":[{"source":"源实体名","target":"目标实体名","type":"关系类型","description":"描述"}]}
+    graph-prompt: |-
+      你是一个知识图谱问答助手。除了向量检索到的资料外，系统还通过知识图谱为你提供了实体关系线索。
+      回答时请结合图谱中的实体关系（例如"X 属于 Y"、"X 发布了 Z"）组织答案，使回答更体现关联性。
+      仍然需要标注来源编号 [n]。
+    chunk:
+      strategy: fixed           # fixed（固定长度） | paragraph（按段落）
+      size: 600                 # 固定长度分块：每块最大字符数
+      overlap: 100              # 固定长度分块：相邻块重叠字符数
+    rag:
+      top-k: 8                  # 默认召回条数
+      min-score: 0.1            # 向量相似度阈值（内置本地模型约 0.3~0.55，真实模型更高，可调）
+      rerank: hybrid            # none | hybrid（向量+关键词） | llm（LLM 重排）
+      graph-hop: 2              # 图谱扩展层数
+      graph-entities: 5         # 图谱召回最多匹配实体数
+      graph-chunks: 15          # 图谱召回最多补充片段数
+      history-limit: 10         # 对话历史保留轮数
+    graph:
+      extract-batch: 4          # 每轮抽取的片段数
+      extract-on-index: true    # 文档入库时自动抽取图谱
+      entity-merge-threshold: 0.92  # 实体名相似度合并阈值

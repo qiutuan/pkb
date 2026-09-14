@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PKB 个人知识库系统</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f766e'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif'>知</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">知</div>
+      <div class="brand-text">
+        <div class="brand-name">PKB 个人知识库</div>
+        <div class="brand-sub">RAG · 知识图谱 · LLM</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="#/chat" data-nav="chat" class="nav-item active">对话</a>
+      <a href="#/kbs" data-nav="kbs" class="nav-item">知识库</a>
+      <a href="#/graph" data-nav="graph" class="nav-item">知识图谱</a>
+      <a href="#/models" data-nav="models" class="nav-item">模型管理</a>
+      <a href="#/settings" data-nav="settings" class="nav-item">系统设置</a>
+    </nav>
+    <div class="topbar-right">
+      <span id="storageBadge" class="badge badge-teal" title="向量存储模式">…</span>
+    </div>
+  </header>
+  <main id="view" class="view"></main>
+</div>
+<div id="toast-container"></div>
+<div id="modal-root"></div>
+
+<script src="js/util.js"></script>
+<script src="js/api.js"></script>
+<script src="js/md.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/views/chat.js"></script>
+<script src="js/views/kb.js"></script>
+<script src="js/views/graphview.js"></script>
+<script src="js/views/models.js"></script>
+<script src="js/views/settings.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

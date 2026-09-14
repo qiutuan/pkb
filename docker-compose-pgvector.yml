@@ -1,0 +1,47 @@
+# PKB 个人知识库系统 —— pgvector 模式（PostgreSQL + pgvector 向量检索）
+# 用法：docker compose -f docker-compose-pgvector.yml up -d --build
+# 切换向量库只需改这一份配置，业务代码零改动；切回内置模式改 PKB_VECTOR_MODE=embedded 即可
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pkb-pg
+    environment:
+      POSTGRES_DB: pkb
+      POSTGRES_USER: pkb
+      POSTGRES_PASSWORD: pkb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pkb -d pkb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  pkb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pkb-pgvector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      PKB_DATA_DIR: /data
+      PKB_VECTOR_MODE: pgvector         # 向量库切换为 PostgreSQL + pgvector
+      PKB_PG_HOST: postgres
+      PKB_PG_PORT: "5432"
+      PKB_PG_DATABASE: pkb
+      PKB_PG_USERNAME: pkb
+      PKB_PG_PASSWORD: pkb
+    volumes:
+      - pkb-data:/data
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  pkb-data:

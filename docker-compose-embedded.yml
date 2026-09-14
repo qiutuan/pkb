@@ -1,0 +1,21 @@
+# PKB 个人知识库系统 —— 内置向量库模式（零外部依赖，单容器开箱即用）
+# 用法：docker compose -f docker-compose-embedded.yml up -d --build
+# 访问：http://localhost:8080
+services:
+  pkb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pkb-embedded
+    ports:
+      - "8080:8080"
+    environment:
+      PKB_DATA_DIR: /data
+      PKB_VECTOR_MODE: embedded          # 内置 SQLite + HNSW，不依赖任何中间件
+      SERVER_PORT: 8080
+    volumes:
+      - pkb-data:/data                    # 数据持久化：SQLite / 密钥 / 上传文件 / 设置
+    restart: unless-stopped
+
+volumes:
+  pkb-data:

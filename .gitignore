@@ -1,0 +1,20 @@
+# Java / Maven
+backend/target/
+*.class
+
+# 运行时数据（本地优先，默认落在运行目录 ./data）
+data/
+*.db
+*.db-wal
+*.db-shm
+.secret
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# 日志
+logs/
+*.log

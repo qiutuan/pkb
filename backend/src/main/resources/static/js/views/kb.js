@@ -50,11 +50,11 @@ const KbView = {
   render() {
     this.el.innerHTML = `
       <div class="kb-layout">
-        <aside class="kb-side card">
+        <aside class="kb-side">
           <div class="kb-side-head">
-            <span style="font-weight:600">分类</span>
-            <button class="btn btn-sm btn-primary" id="kbNewCat">新建分类</button>
+            <button class="btn btn-sm btn-primary" id="kbNewCat">+ 新建分类</button>
           </div>
+          <div class="kb-cat-title">分类</div>
           <div class="kb-cat-tree" id="kbCatTree">${this.catTree()}</div>
         </aside>
         <section class="kb-main">
@@ -63,7 +63,7 @@ const KbView = {
               <div class="page-title">知识库</div>
               <div class="page-sub">共 ${this.kbs.length} 个知识库 · 多级分类 · 每库独立索引与配置</div>
             </div>
-            <button class="btn btn-primary" id="kbNew">+ 新建知识库</button>
+            ${this.kbs.length ? '<button class="btn btn-primary" id="kbNew">+ 新建知识库</button>' : ''}
           </div>
           <div id="kbList" class="kb-grid">${this.renderKbs()}</div>
         </section>
@@ -82,7 +82,18 @@ const KbView = {
 
   renderKbs() {
     if (!this.kbs.length) {
-      return `<div class="empty"><div class="empty-icon">🗂</div><div class="empty-title">还没有知识库</div><div>创建知识库后上传文档，即可开始 RAG 问答与图谱构建</div></div>`;
+      return `<div class="empty">
+        <svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="14" y="20" width="68" height="58" rx="10" fill="#FFF7ED" stroke="#F97316" stroke-width="2.5"/>
+          <path d="M32 40h32M32 52h24" stroke="#F97316" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="62" cy="64" r="10" fill="#FFEDD5" stroke="#F97316" stroke-width="2.5"/>
+          <path d="M58.5 64l2.5 2.5 5-5" stroke="#F97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M30 14h26l8 8" stroke="#FB923C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="empty-title">还没有知识库</div>
+        <div class="empty-sub">创建知识库后上传文档，即可开始 RAG 问答与图谱构建。每个知识库拥有独立索引、分块策略与向量模型。</div>
+        <button class="btn btn-primary" id="kbNew">+ 新建知识库</button>
+      </div>`;
     }
     return this.kbs.map(v => {
       const k = v.kb;
@@ -453,7 +464,7 @@ const KbView = {
         table.innerHTML = `<div class="empty"><div class="empty-icon">📄</div><div class="empty-title">暂无文档</div><div>支持 txt / md / pdf / docx / doc${this.currentKb.kb.multimodal ? ' / 图片 / 视频' : ''}，点击右上角上传</div></div>`;
         return;
       }
-      table.innerHTML = `<table class="table">
+      table.innerHTML = `<div class="table-wrap"><table class="table">
         <thead><tr><th>文件名</th><th>类型</th><th>大小</th><th>状态</th><th>进度</th><th>分块</th><th>上传时间</th><th>操作</th></tr></thead>
         <tbody>${docs.map(d => `<tr>
           <td class="ellipsis" style="max-width:260px" title="${Util.esc(d.fileName)}">${Util.esc(d.fileName)}</td>
@@ -469,7 +480,7 @@ const KbView = {
             ${d.status === 'INDEXED' ? `<button class="btn btn-sm" data-reindex="${d.id}">重建</button>` : ''}
             <button class="btn btn-sm btn-danger" data-deldoc="${d.id}">删除</button>
           </div></td>
-        </tr>`).join('')}</tbody></table>`;
+        </tr>`).join('')}</tbody></table></div>`;
     } catch (e) {
       table.innerHTML = `<div class="hint" style="padding:16px;color:var(--danger)">${Util.esc(e.message)}</div>`;
     }

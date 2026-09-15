@@ -136,7 +136,7 @@ const ChatView = {
     const selected = this.kbs.filter(k => this.state.kbIds.includes(k.kb.id));
     box.innerHTML = selected.map(k => `
       <span class="kb-tag">${Util.esc(k.kb.name)}<button data-untag="${k.kb.id}" title="移除">✕</button></span>`).join('')
-      + (selected.length ? '' : '<span class="hint">尚未选择知识库，点击下方添加</span>');
+      + (selected.length ? '' : '<span class="hint">尚未选择知识库</span><button class="btn btn-sm" id="chatKbAddBtn" title="选择知识库">+ 添加</button>');
     this.updatePlaceholder();
   },
 

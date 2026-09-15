@@ -20,56 +20,76 @@ const GraphViewPage = {
 
   render() {
     this.el.innerHTML = `
-      <div class="page">
+      <div class="page graph-page">
         <div class="graph-head">
           <div class="page-title">知识图谱</div>
           <div class="page-sub">从知识库文档中自动抽取实体与关系，支持 GraphRAG 混合检索</div>
         </div>
-        <div class="graph-layout">
-          <aside class="graph-side card">
-            <div class="graph-side-title">选择知识库</div>
-            <div class="graph-kb-multi" id="graphKbList">
-              <label class="graph-kb-all"><input type="checkbox" id="graphKbAll"> 全选</label>
+        <div class="graph-toolbar-row card">
+          <div class="graph-kb-pick">
+            <label class="graph-kb-all"><input type="checkbox" id="graphKbAll"> 全选</label>
+            <div class="graph-kb-tags" id="graphKbTags"></div>
+            <span class="graph-kb-open" id="graphKbOpenBtn" title="选择知识库">▾ 选择</span>
+            <div class="graph-kb-drop" id="graphKbDrop" style="display:none">
               ${this.kbs.map(k => `
                 <label class="graph-kb-item" data-id="${k.kb.id}">
                   <input type="checkbox" ${this.kbIds.includes(k.kb.id) ? 'checked' : ''}> ${Util.esc(k.kb.name)}
-                  ${k.kb.graphEnabled ? '<span class="badge badge-purple">图谱</span>' : ''}
                 </label>`).join('')}
               ${this.kbs.length ? '' : '<div class="hint">请先创建知识库并上传文档</div>'}
             </div>
-            <div class="graph-stats" id="graphStats"></div>
-            <div class="graph-side-actions">
-              <button class="btn btn-primary" id="graphExtractBtn">开始抽取</button>
-              <button class="btn btn-danger" id="graphClearBtn">清空图谱</button>
+          </div>
+          <div class="graph-stats" id="graphStats"></div>
+          <div class="graph-toolbar-actions">
+            <button class="btn btn-primary" id="graphExtractBtn">开始抽取</button>
+            <button class="btn btn-danger" id="graphClearBtn">清空图谱</button>
+          </div>
+        </div>
+        <div class="graph-layout">
+          <aside class="graph-side">
+            <div class="graph-side-block">
+              <div class="graph-side-title">选择知识库</div>
+              <div class="graph-kb-multi" id="graphKbList">
+                ${this.kbs.map(k => `
+                  <label class="graph-kb-item" data-id="${k.kb.id}">
+                    <input type="checkbox" ${this.kbIds.includes(k.kb.id) ? 'checked' : ''}> ${Util.esc(k.kb.name)}
+                    ${k.kb.graphEnabled ? '<span class="badge badge-purple">图谱</span>' : ''}
+                  </label>`).join('')}
+                ${this.kbs.length ? '' : '<div class="hint">请先创建知识库并上传文档</div>'}
+              </div>
             </div>
-            <div class="graph-focus">
+            <div class="graph-side-block">
               <div class="graph-side-title">聚焦实体</div>
               <input class="input" id="graphQuery" placeholder="输入实体名，如：知识图谱">
               <button class="btn" id="graphFocusBtn" style="width:100%;margin-top:8px">聚焦（图谱召回高亮）</button>
               <div id="graphFocusInfo" class="hint"></div>
             </div>
+            <div class="graph-side-block" id="graphEntityDetail">
+              <div class="graph-side-title">实体详情</div>
+              <div class="hint">点击图谱中的节点查看详情与溯源片段</div>
+            </div>
             <div id="graphProgress" style="display:none"></div>
           </aside>
-          <div class="graph-main card">
+          <div class="graph-main">
             <div class="graph-canvas-wrap" id="graphCanvasWrap">
               <div class="graph-tip">滚轮缩放 · 拖拽平移 · 点击节点查看溯源 · 金色描边 = 命中查询</div>
               <canvas id="graphCanvas"></canvas>
               <div class="graph-empty" id="graphEmpty" style="display:none">
                 <svg width="96" height="80" viewBox="0 0 96 80" fill="none"><circle cx="26" cy="26" r="10" stroke="#F97316" stroke-width="2.5"/><circle cx="70" cy="18" r="8" stroke="#FB923C" stroke-width="2.5"/><circle cx="74" cy="58" r="9" stroke="#FDBA74" stroke-width="2.5"/><circle cx="24" cy="60" r="7" stroke="#F97316" stroke-width="2.5"/><path d="M33 30L63 22M69 25L66 51M71 50L31 56M30 53L28 33" stroke="#FCA5A5" stroke-width="2" stroke-linecap="round"/></svg>
                 <div class="empty-title">暂无图谱数据</div>
-                <div class="empty-sub">上传文档后点击「开始抽取」，由 LLM 自动抽取实体与关系</div>
+                <div class="empty-sub">先建库上传文档 → 点击「开始抽取」，由 LLM 自动抽取实体与关系</div>
               </div>
+              <div class="graph-legend" id="graphLegend" style="display:none"></div>
             </div>
-            <div class="graph-legend" id="graphLegend" style="display:none"></div>
           </div>
-          <aside class="entity-panel card" id="graphEntityDetail">
-            <div class="hint">点击图谱中的节点查看详情与溯源片段</div>
-          </aside>
         </div>
       </div>`;
   },
 
   bind() {
+    const openBtn = this.el.querySelector('#graphKbOpenBtn');
+    const drop = this.el.querySelector('#graphKbDrop');
+    if (openBtn) openBtn.onclick = e => { e.stopPropagation(); drop.style.display = drop.style.display === 'none' ? 'block' : 'none'; };
+    document.addEventListener('click', e => { if (drop && !e.target.closest('.graph-kb-pick')) drop.style.display = 'none'; });
     const list = this.el.querySelector('#graphKbList');
     list.addEventListener('change', e => {
       const item = e.target.closest('.graph-kb-item');
@@ -112,9 +132,14 @@ const GraphViewPage = {
         Api.post('/graph/multi/data', { kbIds: this.kbIds, query: this.el.querySelector('#graphQuery').value.trim() || null })
       ]);
       statsEl.innerHTML = `
-        <div class="stat-line"><span>实体</span><b>${stats.entities ?? 0}</b></div>
-        <div class="stat-line"><span>关系</span><b>${stats.relations ?? 0}</b></div>
-        <div class="stat-line"><span>分块</span><b>${stats.chunks ?? 0}</b></div>`;
+        <span class="stat-pill"><b>${stats.entities ?? 0}</b> 实体</span>
+        <span class="stat-pill"><b>${stats.relations ?? 0}</b> 关系</span>
+        <span class="stat-pill"><b>${this.kbIds.length}</b> 覆盖库</span>`;
+      const tagBox = this.el.querySelector('#graphKbTags');
+      if (tagBox) {
+        const names = this.kbs.filter(k => this.kbIds.includes(k.kb.id)).map(k => k.kb.name);
+        tagBox.innerHTML = names.map(n => `<span class="kb-tag">${Util.esc(n)}</span>`).join('') || '<span class="hint">未选择</span>';
+      }
       const wrap = this.el.querySelector('#graphCanvasWrap');
       const canvas = this.el.querySelector('#graphCanvas');
       if (this.graph) this.graph.stop();

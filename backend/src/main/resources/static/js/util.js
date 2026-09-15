@@ -41,11 +41,28 @@ const Util = {
   }
 };
 
-function toast(msg, type = 'info', ms = 3200) {
+function toast(msg, type = 'info', ms = 4000) {
   const c = document.getElementById('toast-container');
-  const t = Util.el(`<div class="toast ${type}">${Util.esc(msg)}</div>`);
+  if (!c) return;
+  const icon = type === 'success' ? '&#10003;' : type === 'error' ? '&#10007;' : '';
+  const t = Util.el(`<div class="toast toast-${type}" role="alert">
+    <span class="toast-bar"></span>
+    ${icon ? `<span class="toast-icon">${icon}</span>` : ''}
+    <span class="toast-msg">${Util.esc(msg)}</span>
+    <button class="toast-close" title="关闭">&#10005;</button>
+  </div>`);
   c.appendChild(t);
-  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, ms);
+  t.querySelector('.toast-close').onclick = () => dismissToast(t);
+  setTimeout(() => dismissToast(t), ms);
+  return t;
+}
+function dismissToast(t) {
+  if (!t || t.dataset.gone) return;
+  t.dataset.gone = '1';
+  t.style.transition = 'opacity 200ms, transform 200ms';
+  t.style.opacity = '0';
+  t.style.transform = 'translateX(24px)';
+  setTimeout(() => t.remove(), 220);
 }
 
 function openModal(html, opts = {}) {

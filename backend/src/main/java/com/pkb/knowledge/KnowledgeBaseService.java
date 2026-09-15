@@ -73,6 +73,9 @@ public class KnowledgeBaseService {
         if (kb.getChunkStrategy() == null || kb.getChunkStrategy().isBlank()) {
             kb.setChunkStrategy("fixed");
         }
+        if (!java.util.Set.of("fixed", "paragraph", "parent_child").contains(kb.getChunkStrategy())) {
+            throw new BusinessException("不支持的分块策略：" + kb.getChunkStrategy());
+        }
         if (kb.getChunkSize() == null || kb.getChunkSize() < 100 || kb.getChunkSize() > 4000) {
             throw new BusinessException("分块大小需在 100–4000 之间");
         }

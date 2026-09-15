@@ -22,24 +22,24 @@ public class KnowledgeBaseDao {
     }
 
     private static final String COLS = "id, category_id, name, description, embedding_provider_id, chunk_strategy, "
-            + "chunk_size, chunk_overlap, multimodal, graph_enabled, created_at, updated_at";
+            + "chunk_size, chunk_overlap, multimodal, graph_enabled, contextual, created_at, updated_at";
 
     public long insert(KnowledgeBase kb) {
         String now = LocalDateTime.now().format(FMT);
         return JdbcUtil.insertAndGetKey(jdbc, "INSERT INTO knowledge_base (category_id, name, description, embedding_provider_id, chunk_strategy, "
-                        + "chunk_size, chunk_overlap, multimodal, graph_enabled, created_at, updated_at) "
-                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        + "chunk_size, chunk_overlap, multimodal, graph_enabled, contextual, created_at, updated_at) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 kb.getCategoryId() == null ? 0 : kb.getCategoryId(), kb.getName(), kb.getDescription() == null ? "" : kb.getDescription(),
                 kb.getEmbeddingProviderId(), kb.getChunkStrategy(), kb.getChunkSize(), kb.getChunkOverlap(),
-                bool(kb.getMultimodal()), bool(kb.getGraphEnabled()), now, now);
+                bool(kb.getMultimodal()), bool(kb.getGraphEnabled()), bool(kb.getContextual()), now, now);
     }
 
     public void update(KnowledgeBase kb) {
         jdbc.update("UPDATE knowledge_base SET category_id=?, name=?, description=?, embedding_provider_id=?, "
-                        + "chunk_strategy=?, chunk_size=?, chunk_overlap=?, multimodal=?, graph_enabled=?, updated_at=? WHERE id=?",
+                        + "chunk_strategy=?, chunk_size=?, chunk_overlap=?, multimodal=?, graph_enabled=?, contextual=?, updated_at=? WHERE id=?",
                 kb.getCategoryId() == null ? 0 : kb.getCategoryId(), kb.getName(), kb.getDescription() == null ? "" : kb.getDescription(),
                 kb.getEmbeddingProviderId(), kb.getChunkStrategy(), kb.getChunkSize(), kb.getChunkOverlap(),
-                bool(kb.getMultimodal()), bool(kb.getGraphEnabled()), LocalDateTime.now().format(FMT), kb.getId());
+                bool(kb.getMultimodal()), bool(kb.getGraphEnabled()), bool(kb.getContextual()), LocalDateTime.now().format(FMT), kb.getId());
     }
 
     public KnowledgeBase findById(long id) {

@@ -9,6 +9,9 @@ public final class SplitterFactory {
     }
 
     public static ChunkSplitter create(String strategy, int size, int overlap) {
+        if ("parent_child".equalsIgnoreCase(strategy)) {
+            return new ParentChildSplitter(size, overlap);
+        }
         return "paragraph".equalsIgnoreCase(strategy)
                 ? new ParagraphSplitter(size, overlap)
                 : new FixedSizeSplitter(size, overlap);

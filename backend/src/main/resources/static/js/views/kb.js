@@ -337,8 +337,10 @@ const KbView = {
           <label class="label">分块策略</label>
           <select class="select" id="kbStrategy">
             <option value="paragraph" ${kb?.chunkStrategy === 'paragraph' ? 'selected' : ''}>按段落优先（推荐中文）</option>
-            <option value="fixed" ${kb?.chunkStrategy !== 'paragraph' ? 'selected' : ''}>固定长度（按字符）</option>
+            <option value="fixed" ${kb?.chunkStrategy === 'fixed' ? 'selected' : ''}>固定长度（按字符）</option>
+            <option value="parent_child" ${kb?.chunkStrategy === 'parent_child' ? 'selected' : ''}>父子分块（小子块检索 + 父块上下文）</option>
           </select>
+          <div class="form-hint" id="hint-kbStrategy"></div>
         </div>
       </div>
       <div class="form-grid">
@@ -360,8 +362,9 @@ const KbView = {
           <label class="radio-label"><input type="radio" name="kbMode" value="multimodal" ${kb?.multimodal ? 'checked' : ''}> 多模态 <span class="hint">接受图片 / 视频，需多模态模型</span></label>
         </div>
       </div>
-      <div class="form-item" style="display:flex;gap:28px">
+      <div class="form-item" style="display:flex;gap:28px;flex-wrap:wrap">
         <label class="switch-label"><span class="switch"><input type="checkbox" id="kbGraph" ${kb?.graphEnabled === false ? '' : 'checked'}><span class="slider"></span></span> 启用知识图谱</label>
+        <label class="switch-label"><span class="switch"><input type="checkbox" id="kbContextual" ${kb?.contextual ? 'checked' : ''}><span class="slider"></span></span> Contextual 模式 <span class="hint">入库时由 LLM 为每个片段生成文档上下文头（一次性入库成本，需默认聊天模型）</span></label>
       </div>
       <div class="modal-foot">
         <button class="btn" onclick="closeModal()">取消</button>
@@ -379,6 +382,12 @@ const KbView = {
     };
     mask.querySelector('#kbChunkSize').oninput = validate;
     mask.querySelector('#kbChunkOverlap').oninput = validate;
+    mask.querySelector('#kbStrategy').onchange = () => {
+      const h = mask.querySelector('#hint-kbStrategy');
+      h.textContent = mask.querySelector('#kbStrategy').value === 'parent_child'
+        ? '检索命中小片段后展开为父块完整内容，兼顾精度与上下文；父块大小 = 分块大小，子块 = 分块大小 ÷ 3（下限 120 字）'
+        : '';
+    };
     mask.querySelector('#kbSave').onclick = async () => {
       if (!validate()) { toast('参数不合法，请修正后保存', 'warn'); return; }
       const name = mask.querySelector('#kbName').value.trim();
@@ -393,7 +402,8 @@ const KbView = {
         chunkSize: Number(mask.querySelector('#kbChunkSize').value),
         chunkOverlap: Number(mask.querySelector('#kbChunkOverlap').value),
         multimodal: mode === 'multimodal',
-        graphEnabled: mask.querySelector('#kbGraph').checked
+        graphEnabled: mask.querySelector('#kbGraph').checked,
+        contextual: mask.querySelector('#kbContextual').checked
       };
       try {
         if (isEdit) await Api.put(`/kbs/${kb.id}`, body);

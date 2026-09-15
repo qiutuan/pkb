@@ -19,6 +19,10 @@ public class FixedSizeSplitter implements ChunkSplitter {
         this.overlap = Math.min(Math.max(0, overlap), this.size / 2);
     }
 
+    public int size() {
+        return size;
+    }
+
     @Override
     public List<String> split(String text) {
         List<String> chunks = new ArrayList<>();

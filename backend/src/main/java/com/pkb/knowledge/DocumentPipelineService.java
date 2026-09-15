@@ -14,6 +14,7 @@ import com.pkb.settings.SettingsService;
 import com.pkb.vector.VectorStore;
 import com.pkb.vector.VectorStoreFactory;
 import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -127,44 +128,53 @@ public class DocumentPipelineService {
                 return;
             }
 
-            // 2. 分块
-            com.pkb.knowledge.splitter.ChunkSplitter splitter =
-                    com.pkb.knowledge.splitter.SplitterFactory.create(
-                            kb.getChunkStrategy(), kb.getChunkSize(), kb.getChunkOverlap());
-            List<String> chunks = splitter.split(text);
-            if (chunks.isEmpty()) {
+            // 2. 分块（普通 / 段落 / 父子分块）
+            List<ChunkItem> items = splitToItems(kb, text);
+            if (items.isEmpty()) {
                 fail(docId, 0.5, "未生成任何片段");
                 return;
             }
             documentDao.updateStatus(docId, "PROCESSING", 0.5, null);
 
+            // 2.5 Contextual 模式：LLM 为每个片段生成文档上下文头并拼入向量文本（一次性入库成本）
+            if (Boolean.TRUE.equals(kb.getContextual())) {
+                applyContextual(items);
+            }
+
             // 3. 向量化
             ModelProvider provider = embeddingService.providerFor(kb);
-            List<float[]> vectors = embeddingService.embedBatch(chunks, provider);
+            List<String> texts = items.stream().map(ChunkItem::content).toList();
+            List<float[]> vectors = embeddingService.embedBatch(texts, provider);
 
-            // 4. 入库（片段行 + 向量）
+            // 4. 入库（片段行 + 向量；父子分块时子块 meta 携带父块全文）
             VectorStore vs = vectorStoreFactory.get();
-            List<Long> chunkIds = new ArrayList<>(chunks.size());
-            for (int i = 0; i < chunks.size(); i++) {
+            List<Long> chunkIds = new ArrayList<>(items.size());
+            for (int i = 0; i < items.size(); i++) {
+                ChunkItem item = items.get(i);
                 Chunk c = new Chunk();
                 c.setKbId(kb.getId());
                 c.setDocId(docId);
                 c.setPosition(i);
-                c.setContent(chunks.get(i));
-                c.setMeta("{\"fileName\":\"" + doc.getFileName() + "\"}");
+                c.setContent(item.content());
+                java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+                meta.put("fileName", doc.getFileName());
+                if (item.parent() != null) {
+                    meta.put("parent", item.parent());
+                }
+                c.setMeta(com.pkb.util.JsonUtil.toJson(meta));
                 long cid = chunkDao.insert(c);
                 vs.add(cid, kb.getId(), vectors.get(i));
                 bm25.add(kb.getId(), cid, c.getContent());
                 chunkIds.add(cid);
             }
-            documentDao.updateChunkCount(docId, chunks.size());
+            documentDao.updateChunkCount(docId, items.size());
             documentDao.updateStatus(docId, "INDEXED", 1.0, null);
-            log.info("文档入库完成: {} → {} 个片段", doc.getFileName(), chunks.size());
+            log.info("文档入库完成: {} → {} 个片段", doc.getFileName(), items.size());
 
             // 5. 图谱抽取（尽力而为，失败不影响入库）
             if (Boolean.TRUE.equals(kb.getGraphEnabled()) && settingsService.graphExtractOnIndex()) {
                 try {
-                    graphExtractionService.extractForChunks(kb, chunkIds, chunks);
+                    graphExtractionService.extractForChunks(kb, chunkIds, texts);
                 } catch (Exception e) {
                     log.warn("文档 {} 图谱抽取失败: {}", doc.getFileName(), e.getMessage());
                 }
@@ -174,6 +184,84 @@ public class DocumentPipelineService {
         } catch (Exception e) {
             log.error("文档处理失败: {} ({})", doc.getFileName(), e.getMessage());
             fail(docId, null, shortError(e));
+        }
+    }
+
+    /** 分块入口：parent_child 返回子块 + 父块；其余策略返回普通块（parent=null） */
+    private List<ChunkItem> splitToItems(KnowledgeBase kb, String text) {
+        List<ChunkItem> items = new ArrayList<>();
+        if ("parent_child".equals(kb.getChunkStrategy())) {
+            com.pkb.knowledge.splitter.ParentChildSplitter pcs =
+                    new com.pkb.knowledge.splitter.ParentChildSplitter(kb.getChunkSize(), kb.getChunkOverlap());
+            for (com.pkb.knowledge.splitter.ParentChildSplitter.ParentChild pc : pcs.splitWithParents(text)) {
+                items.add(new ChunkItem(pc.child(), pc.parent()));
+            }
+        } else {
+            com.pkb.knowledge.splitter.ChunkSplitter splitter =
+                    com.pkb.knowledge.splitter.SplitterFactory.create(
+                            kb.getChunkStrategy(), kb.getChunkSize(), kb.getChunkOverlap());
+            for (String s : splitter.split(text)) {
+                items.add(new ChunkItem(s, null));
+            }
+        }
+        return items;
+    }
+
+    /** Contextual：批量（每批 8 个）用聊天模型生成一句文档上下文头，拼到片段前；失败片段跳过不阻塞入库 */
+    private void applyContextual(List<ChunkItem> items) {
+        try {
+            ModelProvider chat = providerService.defaultChatProvider();
+            ChatModel model = modelFactory.chatModel(chat);
+            int batchSize = 8;
+            for (int i = 0; i < items.size(); i += batchSize) {
+                int end = Math.min(i + batchSize, items.size());
+                StringBuilder prompt = new StringBuilder();
+                prompt.append("你是文档上下文标注助手。请为下面每个片段生成一句上下文头，说明它所属文档与讨论主题，一句话不超过 40 字，如“本文档为《XX规范》第 3 节，讨论……”。严格按“序号: 上下文”格式输出，一行一条，不要输出其他内容。\n\n");
+                for (int j = i; j < end; j++) {
+                    prompt.append(j - i + 1).append(": ").append(items.get(j).content()).append("\n\n");
+                }
+                String r = model.chat(dev.langchain4j.model.chat.request.ChatRequest.builder()
+                        .messages(List.of(dev.langchain4j.data.message.UserMessage.from(prompt.toString())))
+                        .build()).aiMessage().text();
+                if (r == null || r.isBlank()) {
+                    continue;
+                }
+                java.util.regex.Pattern pat = java.util.regex.Pattern.compile("^\\s*(\\d+)[:：]\\s*(.+)$");
+                for (String line : r.split("\n")) {
+                    java.util.regex.Matcher m = pat.matcher(line);
+                    if (!m.find()) {
+                        continue;
+                    }
+                    int idx = Integer.parseInt(m.group(1)) - 1;
+                    String head = m.group(2).trim();
+                    if (idx >= 0 && idx < end - i && !head.isBlank()) {
+                        ChunkItem item = items.get(i + idx);
+                        item.content = head + "\n" + item.content;
+                    }
+                }
+            }
+            log.info("Contextual 标注完成（{} 个片段）", items.size());
+        } catch (Exception e) {
+            log.warn("Contextual 生成失败，跳过本次标注: {}", e.getMessage());
+        }
+    }
+
+    /** 入库片段：content 为向量化/入库文本；parent 为父块全文（父子分块时非空） */
+    private static final class ChunkItem {
+        private String content;
+        private final String parent;
+
+        ChunkItem(String content, String parent) {
+            this.content = content;
+            this.parent = parent;
+        }
+
+        String content() {
+            return content;
+        }
+
+        String parent() {
+            return parent;
         }
     }
 

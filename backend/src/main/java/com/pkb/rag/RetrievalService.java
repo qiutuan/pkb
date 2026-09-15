@@ -119,8 +119,7 @@ public class RetrievalService {
                     if (c == null) {
                         continue;
                     }
-                    vectorHits.add(new RetrievedChunk(c.getId(), kbId, c.getDocId(), docName(c, docNameCache),
-                            c.getPosition() == null ? 0 : c.getPosition(), c.getContent(), hit.score(), "vector"));
+                    vectorHits.add(toRetrieved(c, kbId, docName(c, docNameCache), hit.score(), "vector"));
                 }
                 // —— BM25 全文召回（混合检索开启时） ——
                 if (hybrid) {
@@ -129,8 +128,7 @@ public class RetrievalService {
                         if (c == null) {
                             continue;
                         }
-                        keywordHits.add(new RetrievedChunk(c.getId(), kbId, c.getDocId(), docName(c, docNameCache),
-                                c.getPosition() == null ? 0 : c.getPosition(), c.getContent(), s.score(), "keyword"));
+                        keywordHits.add(toRetrieved(c, kbId, docName(c, docNameCache), s.score(), "keyword"));
                     }
                 }
             } catch (BusinessException e) {
@@ -306,6 +304,23 @@ public class RetrievalService {
             log.warn("HyDE 生成失败，使用原问题向量: {}", e.getMessage());
             return null;
         }
+    }
+
+    /** 构造检索结果：父子分块时展开为父块完整内容（meta.parent） */
+    private RetrievedChunk toRetrieved(Chunk c, long kbId, String docName, double score, String source) {
+        String content = c.getContent();
+        try {
+            if (c.getMeta() != null && !c.getMeta().isBlank()) {
+                Map<String, Object> meta = JsonUtil.fromJson(c.getMeta(), Map.class);
+                Object parent = meta.get("parent");
+                if (parent != null) {
+                    content = String.valueOf(parent);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return new RetrievedChunk(c.getId(), kbId, c.getDocId(), docName,
+                c.getPosition() == null ? 0 : c.getPosition(), content, score, source);
     }
 
     private Chunk chunkById(long kbId, long chunkId) {

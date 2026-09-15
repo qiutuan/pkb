@@ -15,6 +15,8 @@ public class KnowledgeBase {
     private Integer chunkOverlap;
     private Boolean multimodal;
     private Boolean graphEnabled;
+    /** Contextual 模式：入库时由 LLM 为每个分块生成文档上下文头并拼入向量文本（一次性入库成本） */
+    private Boolean contextual;
     private String createdAt;
     private String updatedAt;
 }

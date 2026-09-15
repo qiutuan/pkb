@@ -34,7 +34,7 @@ import java.util.Set;
 @DependsOn("databaseInitializer")
 public class ModelProviderService {
 
-    private static final Set<String> TYPES = Set.of("openai_compatible", "ollama", "anthropic", "gemini", "local");
+    private static final Set<String> TYPES = Set.of("openai_compatible", "ollama", "anthropic", "gemini", "local", "rerank");
 
     private final ModelProviderDao dao;
     private final ModelFactory factory;
@@ -200,6 +200,7 @@ public class ModelProviderService {
                 case "ollama" -> testOllama(p);
                 case "openai_compatible" -> testOpenAiCompatible(p);
                 case "anthropic", "gemini" -> testChatPing(p);
+                case "rerank" -> testRerank(p);
                 case "local" -> "内置本地模型，无需连接";
                 default -> "未知类型";
             };
@@ -232,6 +233,32 @@ public class ModelProviderService {
             return "OpenAI 兼容接口正常（HTTP " + resp.statusCode() + "）";
         }
         return chatPingRaw(p);
+    }
+
+    private String testRerank(ModelProvider p) throws Exception {
+        String base = ModelFactory.normalizeOpenAiUrl(p.getBaseUrl());
+        String url = base + "/rerank";
+        HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url)).GET().timeout(Duration.ofSeconds(15));
+        String key = decrypt(p);
+        if (key != null && !key.isBlank()) {
+            rb.header("Authorization", "Bearer " + key);
+        }
+        HttpResponse<String> resp = http().send(rb.build(), HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
+            return "Rerank 接口正常（HTTP " + resp.statusCode() + "）";
+        }
+        return "Rerank 接口可用性未知（HTTP " + resp.statusCode() + "，POST /rerank 生效）";
+    }
+
+    /** 默认 Rerank 模型：类型为 rerank 且启用的第一个 */
+    public ModelProvider defaultRerankProvider() {
+        List<ModelProvider> list = dao.findAllEnabled();
+        for (ModelProvider p : list) {
+            if ("rerank".equals(p.getProviderType())) {
+                return p;
+            }
+        }
+        throw new BusinessException("尚未配置 Rerank 模型（类型为 Rerank 的 Provider），请到「模型管理」添加");
     }
 
     private String testChatPing(ModelProvider p) {
@@ -289,6 +316,16 @@ public class ModelProviderService {
             p.setDefaultChat(false);
             if (p.getEmbeddingModel() == null || p.getEmbeddingModel().isBlank()) {
                 throw new BusinessException("内置本地向量模型需配置向量模型名");
+            }
+            return;
+        }
+        // Rerank 模型：仅需 base_url + api_key + 模型名（存于 chatModel），不参与聊天/向量
+        if ("rerank".equals(p.getProviderType())) {
+            p.setEmbeddingModel(null);
+            p.setDefaultChat(false);
+            p.setDefaultEmbedding(false);
+            if (p.getChatModel() == null || p.getChatModel().isBlank()) {
+                throw new BusinessException("Rerank 模型需填写模型名（存于聊天模型名）");
             }
             return;
         }

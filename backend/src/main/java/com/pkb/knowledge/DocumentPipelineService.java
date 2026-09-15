@@ -9,6 +9,7 @@ import com.pkb.graph.GraphExtractionService;
 import com.pkb.model.ModelFactory;
 import com.pkb.model.ModelProvider;
 import com.pkb.model.ModelProviderService;
+import com.pkb.rag.Bm25Index;
 import com.pkb.settings.SettingsService;
 import com.pkb.vector.VectorStore;
 import com.pkb.vector.VectorStoreFactory;
@@ -45,13 +46,14 @@ public class DocumentPipelineService {
     private final ModelFactory modelFactory;
     private final SettingsService settingsService;
     private final GraphExtractionService graphExtractionService;
+    private final Bm25Index bm25;
     private final ThreadPoolTaskExecutor executor;
 
     public DocumentPipelineService(DocumentDao documentDao, KnowledgeBaseDao kbDao, ChunkDao chunkDao,
                                    GraphDao graphDao, EmbeddingService embeddingService,
                                    VectorStoreFactory vectorStoreFactory, ModelProviderService providerService,
                                    ModelFactory modelFactory, SettingsService settingsService,
-                                   GraphExtractionService graphExtractionService,
+                                   GraphExtractionService graphExtractionService, Bm25Index bm25,
                                    @Qualifier("pipelineExecutor") ThreadPoolTaskExecutor executor) {
         this.documentDao = documentDao;
         this.kbDao = kbDao;
@@ -63,6 +65,7 @@ public class DocumentPipelineService {
         this.modelFactory = modelFactory;
         this.settingsService = settingsService;
         this.graphExtractionService = graphExtractionService;
+        this.bm25 = bm25;
         this.executor = executor;
     }
 
@@ -94,6 +97,7 @@ public class DocumentPipelineService {
         if (kb == null) {
             throw new BusinessException("知识库不存在");
         }
+        bm25.invalidate(kb.getId());
         List<Long> oldIds = chunkDao.findIdsByDoc(docId);
         vectorStoreFactory.get().deleteChunks(kb.getId(), oldIds);
         graphDao.deleteEntityChunkByChunkIds(oldIds);
@@ -150,6 +154,7 @@ public class DocumentPipelineService {
                 c.setMeta("{\"fileName\":\"" + doc.getFileName() + "\"}");
                 long cid = chunkDao.insert(c);
                 vs.add(cid, kb.getId(), vectors.get(i));
+                bm25.add(kb.getId(), cid, c.getContent());
                 chunkIds.add(cid);
             }
             documentDao.updateChunkCount(docId, chunks.size());

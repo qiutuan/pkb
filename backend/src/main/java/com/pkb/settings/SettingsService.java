@@ -43,6 +43,18 @@ public class SettingsService {
     public static final String K_GRAPH_MERGE_THRESHOLD = "graphEntityMergeThreshold";
     /** 图谱抽取专用模型 Provider id；0 = 跟随默认聊天模型 */
     public static final String K_GRAPH_EXTRACT_PROVIDER = "graphExtractProvider";
+    /** 混合检索（向量 + BM25 + RRF 融合），默认开启 */
+    public static final String K_RAG_HYBRID = "ragHybrid";
+    /** 召回倍率：召回 topK × 该值后进入重排 */
+    public static final String K_RAG_RECALL_MULTIPLIER = "ragRecallMultiplier";
+    /** 分数归一化：none（不变）| minmax */
+    public static final String K_RAG_SCORE_NORM = "ragScoreNorm";
+    /** 检索前查询改写（增加一次 LLM 调用），默认关闭 */
+    public static final String K_RAG_QUERY_REWRITE = "ragQueryRewrite";
+    /** HyDE：生成假设答案辅助召回（增加一次 LLM 调用），默认关闭 */
+    public static final String K_RAG_HYDE = "ragHyde";
+    /** Rerank 模型 Provider id；0 = 使用默认 Rerank Provider */
+    public static final String K_RAG_RERANK_PROVIDER = "ragRerankProvider";
 
     private final PkbProperties props;
     private final Yaml yaml;
@@ -111,6 +123,12 @@ public class SettingsService {
         out.put(K_RAG_GRAPH_ENTITIES, d.getRag().getGraphEntities());
         out.put(K_RAG_GRAPH_CHUNKS, d.getRag().getGraphChunks());
         out.put(K_RAG_HISTORY_LIMIT, d.getRag().getHistoryLimit());
+        out.put(K_RAG_HYBRID, d.getRag().isHybrid());
+        out.put(K_RAG_RECALL_MULTIPLIER, d.getRag().getRecallMultiplier());
+        out.put(K_RAG_SCORE_NORM, d.getRag().getScoreNorm());
+        out.put(K_RAG_QUERY_REWRITE, d.getRag().isQueryRewrite());
+        out.put(K_RAG_HYDE, d.getRag().isHyde());
+        out.put(K_RAG_RERANK_PROVIDER, d.getRag().getRerankProvider());
         out.put(K_GRAPH_EXTRACT_BATCH, d.getGraph().getExtractBatch());
         out.put(K_GRAPH_EXTRACT_ON_INDEX, d.getGraph().isExtractOnIndex());
         out.put(K_GRAPH_MERGE_THRESHOLD, d.getGraph().getEntityMergeThreshold());
@@ -245,5 +263,32 @@ public class SettingsService {
 
     public double entityMergeThreshold() {
         return doubleVal(K_GRAPH_MERGE_THRESHOLD, props.getDefaults().getGraph().getEntityMergeThreshold());
+    }
+
+    // ===== 检索增强 =====
+
+    public boolean ragHybrid() {
+        return boolVal(K_RAG_HYBRID, props.getDefaults().getRag().isHybrid());
+    }
+
+    public int ragRecallMultiplier() {
+        int v = intVal(K_RAG_RECALL_MULTIPLIER, props.getDefaults().getRag().getRecallMultiplier());
+        return v < 1 ? 1 : Math.min(v, 5);
+    }
+
+    public String ragScoreNorm() {
+        return str(K_RAG_SCORE_NORM, props.getDefaults().getRag().getScoreNorm());
+    }
+
+    public boolean ragQueryRewrite() {
+        return boolVal(K_RAG_QUERY_REWRITE, props.getDefaults().getRag().isQueryRewrite());
+    }
+
+    public boolean ragHyde() {
+        return boolVal(K_RAG_HYDE, props.getDefaults().getRag().isHyde());
+    }
+
+    public long ragRerankProvider() {
+        return intVal(K_RAG_RERANK_PROVIDER, (int) props.getDefaults().getRag().getRerankProvider());
     }
 }

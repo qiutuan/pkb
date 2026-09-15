@@ -81,9 +81,25 @@ public class ChatService {
                 }
             }
 
+            // 会话历史（用于查询改写）
+            List<ChatMessage> allHistory = chatDao.messages(sessionId);
+            List<Map<String, Object>> historyBrief = new ArrayList<>();
+            int hLimit = settings.historyLimit();
+            if (allHistory.size() > hLimit) {
+                allHistory = allHistory.subList(allHistory.size() - hLimit, allHistory.size());
+            }
+            for (ChatMessage h : allHistory) {
+                Map<String, Object> item = new java.util.HashMap<>();
+                item.put("role", h.getRole());
+                item.put("content", h.getContent() == null ? "" : h.getContent().length() > 200
+                        ? h.getContent().substring(0, 200) : h.getContent());
+                historyBrief.add(item);
+            }
+
             // 检索
             List<RetrievedChunk> chunks = retrievalService.retrieve(new RetrieveRequest(
-                    req.kbIds(), req.query(), req.topK(), req.minScore(), req.rerank(), req.graphRag()));
+                    req.kbIds(), req.query(), req.topK(), req.minScore(), req.rerank(), req.graphRag(),
+                    null, null, null, null, null, historyBrief));
 
             // 保存用户消息（历史仅持久化原始问题，上下文在每次请求时重组）
             chatDao.insertMessage(sessionId, "user", req.query(), "[]");
@@ -103,12 +119,8 @@ public class ChatService {
             if (req.graphRag() == null || req.graphRag()) {
                 msgs.add(SystemMessage.from(settings.graphPrompt()));
             }
-            List<ChatMessage> history = chatDao.messages(sessionId);
+            List<ChatMessage> history = allHistory; // 已截断最近 N 轮（不含当前问题，取时尚未落库）
             int limit = settings.historyLimit();
-            // 去掉刚保存的当前用户消息，取最近 N 轮
-            if (!history.isEmpty()) {
-                history = history.subList(0, history.size() - 1);
-            }
             if (history.size() > limit * 2) {
                 history = history.subList(history.size() - limit * 2, history.size());
             }

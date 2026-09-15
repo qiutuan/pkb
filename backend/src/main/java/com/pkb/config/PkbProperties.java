@@ -123,6 +123,18 @@ public class PkbProperties {
         private int graphEntities = 5;
         private int graphChunks = 15;
         private int historyLimit = 10;
+        /** 混合检索（向量 + BM25 + RRF 融合），默认开启 */
+        private boolean hybrid = true;
+        /** 召回倍率：召回 topK × 该值后进入重排 */
+        private int recallMultiplier = 3;
+        /** 分数归一化：none（不变，默认）| minmax */
+        private String scoreNorm = "none";
+        /** 检索前查询改写（增加一次 LLM 调用），默认关闭 */
+        private boolean queryRewrite = false;
+        /** HyDE：生成假设答案辅助召回（增加一次 LLM 调用），默认关闭 */
+        private boolean hyde = false;
+        /** Rerank 模型 Provider id；0 = 使用默认 Rerank Provider */
+        private long rerankProvider = 0;
     }
 
     @Data

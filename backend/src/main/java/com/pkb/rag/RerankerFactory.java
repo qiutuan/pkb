@@ -18,10 +18,11 @@ public class RerankerFactory {
         this.factory = factory;
     }
 
-    public Reranker get(String mode) {
+    public Reranker get(String mode, Long rerankProviderId) {
         return switch (mode == null ? "hybrid" : mode) {
             case "none" -> new NoneReranker();
             case "llm" -> new LlmReranker(providerService, factory);
+            case "rerank_model" -> new RerankModelReranker(providerService, factory, rerankProviderId);
             default -> new HybridReranker();
         };
     }

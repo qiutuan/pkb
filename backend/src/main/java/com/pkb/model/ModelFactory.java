@@ -81,7 +81,7 @@ public class ModelFactory {
         return m;
     }
 
-    private String decryptKey(ModelProvider p) {
+    public String decryptKey(ModelProvider p) {
         if (p.getApiKeyEnc() == null || p.getApiKeyEnc().isBlank()) {
             return null;
         }

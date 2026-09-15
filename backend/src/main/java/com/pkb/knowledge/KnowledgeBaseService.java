@@ -7,6 +7,7 @@ import com.pkb.dao.DocumentDao;
 import com.pkb.dao.GraphDao;
 import com.pkb.dao.KnowledgeBaseDao;
 import com.pkb.dao.ModelProviderDao;
+import com.pkb.rag.Bm25Index;
 import com.pkb.vector.VectorStore;
 import com.pkb.vector.VectorStoreFactory;
 import org.springframework.stereotype.Service;
@@ -26,10 +27,11 @@ public class KnowledgeBaseService {
     private final GraphDao graphDao;
     private final ModelProviderDao providerDao;
     private final VectorStoreFactory vectorStoreFactory;
+    private final Bm25Index bm25;
 
     public KnowledgeBaseService(KnowledgeBaseDao dao, CategoryDao categoryDao, DocumentDao documentDao,
                                 ChunkDao chunkDao, GraphDao graphDao, ModelProviderDao providerDao,
-                                VectorStoreFactory vectorStoreFactory) {
+                                VectorStoreFactory vectorStoreFactory, Bm25Index bm25) {
         this.dao = dao;
         this.categoryDao = categoryDao;
         this.documentDao = documentDao;
@@ -37,6 +39,7 @@ public class KnowledgeBaseService {
         this.graphDao = graphDao;
         this.providerDao = providerDao;
         this.vectorStoreFactory = vectorStoreFactory;
+        this.bm25 = bm25;
     }
 
     public List<KbView> list() {

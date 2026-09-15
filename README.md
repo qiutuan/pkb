@@ -58,10 +58,11 @@ curl -s 'localhost:8080/api/retrieval' -H 'Content-Type: application/json' \
 
 | 模块 | 能力 |
 |---|---|
-| 模型管理 | 5 类 Provider：OpenAI 协议自定义 / Ollama（自动拉模型列表）/ Anthropic / Gemini / 内置本地。聊天与 Embedding 分离配置、可切换默认、连接测试、API Key 加密存储 |
-| 知识库 | 多级分类（≥2 级）、库级独立（文档 / 向量索引 / Embedding / 分块策略）、上传→解析→分块→向量化→入库流水线（进度/失败原因/重试/重建索引） |
-| 检索与问答 | 多知识库跨库检索、top_k / 阈值 / 重排（无/混合/LLM）可调、多轮会话（SSE 流式）、答案引用溯源（文档名 + 片段定位）、会话导出 Markdown（含引用来源，供整理沉淀） |
+| 模型管理 | 6 类 Provider：OpenAI 协议自定义 / Ollama（自动拉模型列表）/ Anthropic / Gemini / Rerank 模型（/v1/rerank）/ 内置本地。国内模板一键预填（百炼/DeepSeek/智谱/Kimi/MiMo/万相）；聊天与向量模型互相独立、至少配置一项；启用/停用开关、可切换默认、连接测试、API Key 加密存储 |
+| 知识库 | 多级分类（≥2 级）、库级独立（文档 / 向量索引 / Embedding / 分块策略 / 表格策略 / Contextual 开关）、上传→解析→分块→向量化→入库流水线（进度/失败原因/重试/重建索引） |
+| 检索与问答 | 多知识库跨库检索；生产级检索管线：BM25+向量 RRF 融合（默认开）、外部 Rerank 模型 / LLM 重排、查询改写与 HyDE（可选）、分数归一化；分阶段检索测试面板 + Hit@K 评估落库；top_k / 阈值可调、多轮会话（SSE 流式）、答案引用溯源、会话导出 Markdown |
 | 知识图谱 | LLM 自动抽取实体/关系（JSON 宽松解析、实体合并去重）、图谱可视化浏览（点击节点溯源）、GraphRAG 混合检索开关、按库独立维护 |
+| 文档格式 | txt / md / pdf / docx / doc / xlsx / xls / csv（表格转文本 / 逐行 JSON / 摘要+明细，>1000 行自动分批）/ pptx / html / epub；纯文本模式同样支持表格 |
 | 多模态 | 纯文本模式（图片/视频直接拒绝并提示）／多模态模式（图片可向量化入库、可随对话发给多模态 LLM），开关在知识库级 |
 | 系统设置 | 全部 Prompt（系统/抽取/图谱）与分块、检索、图谱参数可在界面修改，落地 `data/settings.yml`，支持恢复默认；亦可直接改 YAML |
 
@@ -94,12 +95,18 @@ pkb:
     system-prompt: ...        # RAG 回答系统提示词
     extract-prompt: ...       # 知识抽取 Prompt
     graph-prompt: ...         # 图谱构建（实体合并）Prompt
-    chunk-strategy: fixed     # fixed | paragraph
+    chunk-strategy: fixed     # fixed | paragraph | parent_child
     chunk-size: 600
     chunk-overlap: 100
     rag-top-k: 8
     rag-min-score: 0.25
-    rag-rerank: hybrid        # none | hybrid | llm
+    rag-rerank: hybrid        # none | hybrid | llm | rerank_model
+    rag-hybrid: true           # 混合检索（BM25 + 向量 + RRF）默认开
+    rag-recall-multiplier: 3   # 召回倍率（先召回 topK×倍率再重排）
+    rag-score-norm: none       # none | minmax 向量分数归一化
+    rag-query-rewrite: false   # 检索前查询改写（增加一次 LLM 调用）
+    rag-hyde: false            # HyDE 假设答案（增加一次 LLM 调用）
+    rag-rerank-provider: 0     # 外部 Rerank 模型 Provider ID
     rag-graph-hop: 2
     rag-graph-entities: 5
     rag-graph-chunks: 15
@@ -242,6 +249,53 @@ pkb/
 ├── docker-compose-pgvector.yml
 └── 默认模型推荐.md
 ```
+
+---
+
+## 第四轮优化（v1.4）使用说明
+
+### 检索增强（默认向后兼容，不开新开关行为不变）
+
+| 能力 | 说明 | 入口 |
+|---|---|---|
+| 混合检索（BM25 + 向量 + RRF） | 自建中文倒排索引做 BM25 全文召回，与向量召回按 RRF（k=60）融合，默认开启；关闭即回退纯向量 | 系统设置 → 分块与检索 → 混合检索开关 |
+| 外部 Rerank 模型 | 在模型管理添加类型「Rerank」的 Provider（填 base_url + api_key + 模型名，兼容 bge-reranker / Cohere 类 OpenAI 协议 `/v1/rerank` 服务）；重排策略选「Rerank 模型」，失败自动回退混合重排 | 模型管理 → 添加模型（提供商模板选自定义、类型选 Rerank）；系统设置 → 重排策略 + Rerank 模型 |
+| 查询改写 / HyDE | 检索前用聊天模型改写口语化/指代问题，或生成假设答案辅助召回；均独立开关、均注明增加一次 LLM 调用，默认关 | 系统设置 → 分块与检索 |
+| 分数归一化 | 不同 Embedding 模型相似度分布差异大，min-max 归一化便于统一阈值；检索测试面板给出当前库分数分布建议 | 系统设置 → 分块与检索 |
+| 检索测试面板 | 对话页检索设置 → 试检索：分四列展示向量 / 关键词 / 融合 / 重排结果与分数；输入多组问题可跑 Hit@K 评估，结果落 `data/eval/eval-*.json` | 对话页 ⚙ → 试检索 |
+
+### 分块与入库
+
+- **父子分块**：知识库分块策略选「父子分块」——小子块（=分块大小÷3，下限 120 字）用于向量检索，命中后返回父块完整内容进 Prompt，兼顾精度与上下文。
+- **Contextual 模式**：知识库表单打开开关后，入库时由默认聊天模型为每个片段生成一句文档上下文头（如「本文档为《XX规范》第3节，讨论……」）拼入向量文本；一次性入库成本，失败片段自动跳过不阻塞。
+
+### 文档格式
+
+- **表格（xlsx / xls / csv）**：知识库级「表格解析策略」三选一——
+  - 表格转文本：每 Sheet 转 Markdown 表格分块入库（表头保留）；
+  - 逐行 JSON：每行一条 JSON（列名→字段值），适合「张三的成绩是多少」类结构化问答；
+  - Sheet 摘要 + 明细：LLM 为每 Sheet 生成一句话概述 + 逐行明细。
+  - 超过 1000 行的 Sheet 自动按批切分（每批重复表头）。纯文本模式同样支持表格。
+- **pptx**：逐页文本框转文本；**html/htm**：正文提取（去除脚本/样式/导航）；**epub**：按 spine 顺序提取章节。
+- 知识库详情页「格式说明 ?」可查看各格式解析方式；不支持格式前端直接拦截提示。
+
+### 模型管理
+
+- 添加模型为「提供商模板 → 类型」两级选择：百炼 DashScope、DeepSeek、智谱 GLM、Kimi、小米 MiMo、阿里万相（多模态）等模板自动预填 base_url 与推荐模型名，只需填 API Key；所有字段仍可修改。
+- 聊天模型名与向量模型名互相独立、各自可留空，但**至少配置一项**（Ollama 向量可空共用内置向量模型）。
+- 只有聊天模型的 Provider 出现在对话/抽取/重排下拉；只有向量模型的 Provider 只能选作默认向量/知识库 Embedding；两者都有则两处都出现。
+- 新增 Provider 默认停用；停用后不出现在模型下拉；默认聊天/默认向量的 Provider 不可停用（需先转移默认身份）。
+
+---
+
+## 规划（Roadmap）
+
+以下能力已记入路线图，后续迭代实现：
+
+- **Agentic RAG**：多跳问题自主规划检索（Self-RAG / CRAG 思想），先拆解子问题再逐跳检索汇聚
+- **LightRAG 风格图谱社区摘要**：对图谱实体按社区聚类生成轻量摘要，提升全局性问题回答质量
+- **对外检索 API**：提供鉴权的 HTTP 检索接口，供其他系统调用本知识库
+- **深色模式**：全站深色主题
 
 ---
 

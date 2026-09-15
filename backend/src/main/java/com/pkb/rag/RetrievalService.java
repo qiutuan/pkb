@@ -16,20 +16,18 @@ import com.pkb.settings.SettingsService;
 import com.pkb.util.JsonUtil;
 import com.pkb.vector.VectorStore;
 import com.pkb.vector.VectorStoreFactory;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.data.message.UserMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 生产级检索管线：
@@ -73,6 +71,22 @@ public class RetrievalService {
     }
 
     public List<RetrievedChunk> retrieve(RetrieveRequest req) {
+        return stage(req).reranked();
+    }
+
+    /** 分阶段检索（检索测试面板用）：向量 / 关键词 / 融合 / 重排 + 分数分布 */
+    public Map<String, Object> debug(RetrieveRequest req) {
+        Stages s = stage(req);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("vector", s.vector());
+        out.put("keyword", s.keyword());
+        out.put("fused", s.fused());
+        out.put("reranked", s.reranked());
+        out.put("distribution", s.distribution());
+        return out;
+    }
+
+    private Stages stage(RetrieveRequest req) {
         if (req.query() == null || req.query().isBlank()) {
             throw new BusinessException("查询内容为空");
         }
@@ -90,7 +104,6 @@ public class RetrievalService {
         int recallTop = Math.min(100, topK * settings.ragRecallMultiplier());
         Long rerankProviderId = req.rerankProviderId() != null ? req.rerankProviderId() : settings.ragRerankProvider();
 
-        // 查询优化：改写 / HyDE（各自默认关闭；开启时各增加一次 LLM 调用）
         String effQuery = req.query();
         if (queryRewrite) {
             effQuery = rewriteQuery(req.query(), req.history());
@@ -99,18 +112,17 @@ public class RetrievalService {
         if (hyde) {
             hydeText = hyde(req.query());
         }
-        // 向量侧用 HyDE 文本（若有），关键词/重排侧用改写后的查询
         String vectorQuery = hydeText != null ? hydeText : effQuery;
 
         List<RetrievedChunk> vectorHits = new ArrayList<>();
         List<RetrievedChunk> keywordHits = new ArrayList<>();
+        List<Double> rawVectorScores = new ArrayList<>();
         Map<Long, RetrievedChunk> graphHits = new HashMap<>();
         Map<Long, String> docNameCache = new HashMap<>();
 
         for (Long kbId : req.kbIds()) {
             KnowledgeBase kb = kbService.require(kbId);
             try {
-                // —— 向量召回 ——
                 float[] qv = embeddingService.embedOne(vectorQuery, embeddingService.providerFor(kb));
                 VectorStore vs = vectorStoreFactory.get();
                 List<VectorStore.ScoredId> hits = vs.search(kbId, qv, recallTop, hybrid ? 0 : minScore);
@@ -119,9 +131,9 @@ public class RetrievalService {
                     if (c == null) {
                         continue;
                     }
+                    rawVectorScores.add((double) hit.score());
                     vectorHits.add(toRetrieved(c, kbId, docName(c, docNameCache), hit.score(), "vector"));
                 }
-                // —— BM25 全文召回（混合检索开启时） ——
                 if (hybrid) {
                     for (Bm25Index.Scored s : bm25.search(kbId, effQuery, recallTop)) {
                         Chunk c = chunkById(kbId, s.chunkId());
@@ -135,7 +147,6 @@ public class RetrievalService {
                 log.warn("知识库 {} 向量检索跳过: {}", kbId, e.getMessage());
             }
 
-            // —— 图谱召回（保留原有逻辑） ——
             if (graphRag && Boolean.TRUE.equals(kb.getGraphEnabled())) {
                 try {
                     List<RetrievedChunk> graphChunks = graphRetrievalService.retrieveChunks(req.query(), kb, settings.graphChunks());
@@ -148,12 +159,12 @@ public class RetrievalService {
             }
         }
 
-        // 分数归一化（min-max）仅在开启时应用
+        Map<String, Object> distribution = scoreDistribution(rawVectorScores, scoreNorm);
+
         if ("minmax".equalsIgnoreCase(scoreNorm)) {
             normalizeScores(vectorHits);
         }
         if (!hybrid) {
-            // 纯向量模式：按向量分过滤阈值（与原行为一致），合并图谱召回
             List<RetrievedChunk> out = new ArrayList<>();
             for (RetrievedChunk v : vectorHits) {
                 if (v.score() >= minScore) {
@@ -161,22 +172,53 @@ public class RetrievalService {
                 }
             }
             mergeGraph(out, graphHits);
-            if (out.isEmpty()) {
-                return List.of();
-            }
-            return rerankerFactory.get(rerankMode, rerankProviderId).rerank(effQuery, out, topK);
+            List<RetrievedChunk> reranked = out.isEmpty() ? List.of()
+                    : rerankerFactory.get(rerankMode, rerankProviderId).rerank(effQuery, out, topK);
+            return new Stages(vectorHits, List.of(), out, reranked, distribution);
         }
 
-        // 混合模式：RRF 融合（向量 + 关键词），阈值仍按向量分过滤
         List<RetrievedChunk> fused = fuse(vectorHits, keywordHits, minScore);
         mergeGraph(fused, graphHits);
-        if (fused.isEmpty()) {
-            return List.of();
-        }
-        return rerankerFactory.get(rerankMode, rerankProviderId).rerank(effQuery, fused, topK);
+        List<RetrievedChunk> reranked = fused.isEmpty() ? List.of()
+                : rerankerFactory.get(rerankMode, rerankProviderId).rerank(effQuery, fused, topK);
+        return new Stages(vectorHits, keywordHits, fused, reranked, distribution);
     }
 
-    /** 图谱命中合并：已存在则标记 both 并取高分，否则加入 */
+    /** 分数分布与阈值建议（供检索测试校准） */
+    private Map<String, Object> scoreDistribution(List<Double> scores, String scoreNorm) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (scores.isEmpty()) {
+            out.put("count", 0);
+            out.put("suggestion", "无向量命中，建议降低阈值或检查知识库是否已入库");
+            return out;
+        }
+        double min = Double.MAX_VALUE, max = -Double.MAX_VALUE, sum = 0;
+        List<Double> sorted = new ArrayList<>(scores);
+        sorted.sort(Double::compareTo);
+        for (double s : sorted) {
+            min = Math.min(min, s);
+            max = Math.max(max, s);
+            sum += s;
+        }
+        double avg = sum / sorted.size();
+        double p50 = sorted.get(sorted.size() / 2);
+        out.put("count", sorted.size());
+        out.put("min", round4(min));
+        out.put("max", round4(max));
+        out.put("avg", round4(avg));
+        out.put("p50", round4(p50));
+        String tip = "minmax".equalsIgnoreCase(scoreNorm)
+                ? "已开启 min-max 归一化，建议阈值 0.3–0.5；当前实际区间 " + round4(min) + "–" + round4(max)
+                : "未归一化，各 Embedding 模型分布差异大；建议阈值 " + round4(Math.max(0, Math.round(avg * 20) / 20.0))
+                + "–" + round4(Math.min(1, Math.round((p50 + (max - p50) * 0.3) * 20) / 20.0)) + " 之间试调";
+        out.put("suggestion", tip);
+        return out;
+    }
+
+    private static double round4(double v) {
+        return Math.round(v * 10000) / 10000.0;
+    }
+
     private void mergeGraph(List<RetrievedChunk> list, Map<Long, RetrievedChunk> graphHits) {
         if (graphHits.isEmpty()) {
             return;
@@ -198,14 +240,12 @@ public class RetrievalService {
         }
     }
 
-    /** RRF 融合（k=60）：向量与关键词各自按排名给分后求和 */
     private List<RetrievedChunk> fuse(List<RetrievedChunk> vectorHits, List<RetrievedChunk> keywordHits, double minScore) {
         Map<Long, RetrievedChunk> byId = new LinkedHashMap<>();
         Map<Long, Double> score = new HashMap<>();
         Map<Long, String> source = new HashMap<>();
         List<RetrievedChunk> ordered = new ArrayList<>();
 
-        // 先按向量分降序排（保证阈值过滤语义稳定）
         List<RetrievedChunk> vec = new ArrayList<>(vectorHits);
         vec.sort(Comparator.comparingDouble(RetrievedChunk::score).reversed());
         List<RetrievedChunk> kw = new ArrayList<>(keywordHits);
@@ -214,7 +254,7 @@ public class RetrievalService {
         int rank = 1;
         for (RetrievedChunk v : vec) {
             if (v.score() < minScore) {
-                continue; // 阈值过滤基于向量分（与纯向量模式语义一致）
+                continue;
             }
             score.merge(v.chunkId(), 1.0 / (RRF_K + rank), Double::sum);
             source.merge(v.chunkId(), "vector", (a, b) -> "both");
@@ -237,7 +277,6 @@ public class RetrievalService {
         return ordered;
     }
 
-    /** min-max 归一化向量分到 [0,1]；全等分时置 0.5 */
     private void normalizeScores(List<RetrievedChunk> hits) {
         if (hits.size() < 2) {
             return;
@@ -258,7 +297,6 @@ public class RetrievalService {
         }
     }
 
-    /** 查询改写：结合对话历史将口语化/指代问题改写为独立检索式（一次 LLM 调用） */
     private String rewriteQuery(String query, List<Map<String, Object>> history) {
         try {
             ChatModel m = modelFactory.chatModel(providerService.defaultChatProvider());
@@ -288,7 +326,6 @@ public class RetrievalService {
         }
     }
 
-    /** HyDE：生成假设答案片段辅助向量召回（一次 LLM 调用） */
     private String hyde(String query) {
         try {
             ChatModel m = modelFactory.chatModel(providerService.defaultChatProvider());
@@ -306,7 +343,6 @@ public class RetrievalService {
         }
     }
 
-    /** 构造检索结果：父子分块时展开为父块完整内容（meta.parent） */
     private RetrievedChunk toRetrieved(Chunk c, long kbId, String docName, double score, String source) {
         String content = c.getContent();
         try {
@@ -343,5 +379,10 @@ public class RetrievalService {
             Document d = documentDao.findById(did);
             return d == null ? "文档" + did : d.getFileName();
         });
+    }
+
+    /** 检索分阶段结果 */
+    public record Stages(List<RetrievedChunk> vector, List<RetrievedChunk> keyword, List<RetrievedChunk> fused,
+                         List<RetrievedChunk> reranked, Map<String, Object> distribution) {
     }
 }

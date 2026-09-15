@@ -349,6 +349,14 @@ body {
 .retrieval-item { font-size: 13px; padding: 6px 0; border-bottom: 1px dashed rgba(249,115,22,0.25); color: var(--text-2); }
 .retrieval-item:last-child { border-bottom: none; }
 .retrieval-item b { color: var(--primary); font-weight: 600; }
+.retrieval-panel { max-height: 420px; }
+.retrieval-dist { font-size: 12px; color: var(--text-2); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0 10px; border-bottom: 1px dashed rgba(249,115,22,0.25); margin-bottom: 10px; }
+.retrieval-dist b { color: var(--primary); }
+.retrieval-dist .hint { width: 100%; margin-top: 2px; }
+.retrieval-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.retrieval-col { border: 1px solid var(--primary-bg2); border-radius: 8px; padding: 8px; background: #fff; }
+.retrieval-col-title { font-size: 12px; font-weight: 600; color: #C2410C; margin-bottom: 6px; }
+.retrieval-col .retrieval-item { font-size: 12px; }
 
 /* 对话输入区 */
 .chat-input-wrap { border-top: 1px solid var(--border); padding: 12px 16px 14px; background: var(--card); }

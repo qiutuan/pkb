@@ -451,18 +451,34 @@ const ChatView = {
     if (!query) { toast('请先输入检索问题', 'warn'); return; }
     panel.style.display = 'block';
     panel.innerHTML = '<div class="hint" style="padding:4px 0">检索中…</div>';
+    const body = {
+      kbIds: this.state.kbIds, query,
+      topK: this.state.topK, minScore: this.state.minScore,
+      rerank: this.state.rerank, graphRag: this.state.graphRag
+    };
     try {
-      const res = await Api.post('/retrieval', {
-        kbIds: this.state.kbIds, query,
-        topK: this.state.topK, minScore: this.state.minScore,
-        rerank: this.state.rerank, graphRag: this.state.graphRag
-      });
-      if (!res.length) {
-        panel.innerHTML = `<div class="retrieval-panel"><div class="retrieval-panel-title">检索结果</div><div class="hint">未命中任何内容，可调低阈值或增大 TopK</div></div>`;
-        return;
-      }
-      panel.innerHTML = `<div class="retrieval-panel"><div class="retrieval-panel-title">命中 ${res.length} 条（文档 · 相似度）</div>` + res.map(c => `
-        <div class="retrieval-item"><b>${Util.esc(c.docName)}</b> · 第${c.position + 1}段 · ${String(c.score).slice(0, 5)}${c.source === 'graph' ? ' · 图谱' : c.source === 'both' ? ' · 向量+图谱' : ''}<br>${Util.esc((c.content || '').slice(0, 110))}${c.content && c.content.length > 110 ? '…' : ''}</div>`).join('') + `</div>`;
+      const d = await Api.post('/retrieval/debug', body);
+      const dcol = d.distribution || {};
+      const distHtml = `<div class="retrieval-dist">
+        <span>向量命中 ${dcol.count ?? 0} 条</span>
+        <span>min <b>${dcol.min ?? '-'}</b></span><span>avg <b>${dcol.avg ?? '-'}</b></span>
+        <span>p50 <b>${dcol.p50 ?? '-'}</b></span><span>max <b>${dcol.max ?? '-'}</b></span>
+        <div class="hint">${Util.esc(dcol.suggestion || '')}</div>
+      </div>`;
+      const cols = [
+        ['向量召回', d.vector || []],
+        ['关键词召回（BM25）', d.keyword || []],
+        ['RRF 融合后', d.fused || []],
+        ['重排后（最终）', d.reranked || []]
+      ];
+      const colHtml = cols.map(([title, list]) => `
+        <div class="retrieval-col">
+          <div class="retrieval-col-title">${title} · ${list.length}</div>
+          ${list.length ? list.map(c => `
+            <div class="retrieval-item"><b>${Util.esc(c.docName)}</b> · ${String(c.score).slice(0, 6)}${c.source === 'graph' ? ' · 图谱' : c.source === 'both' ? ' · 向量+图谱' : ''}<br>${Util.esc((c.content || '').slice(0, 80))}${c.content && c.content.length > 80 ? '…' : ''}</div>`).join('')
+            : '<div class="hint">无命中</div>'}
+        </div>`).join('');
+      panel.innerHTML = `<div class="retrieval-panel"><div class="retrieval-panel-title">分阶段检索（${Util.esc(query)}）</div>${distHtml}<div class="retrieval-cols">${colHtml}</div></div>`;
     } catch (e) {
       panel.innerHTML = `<div class="retrieval-panel"><div class="retrieval-panel-title">检索失败</div><div class="hint" style="color:var(--danger)">${Util.esc(e.message)}</div></div>`;
     }

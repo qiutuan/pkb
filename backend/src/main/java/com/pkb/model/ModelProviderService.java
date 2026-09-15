@@ -287,16 +287,22 @@ public class ModelProviderService {
             p.setBaseUrl(null);
             p.setChatModel(null);
             p.setDefaultChat(false);
+            if (p.getEmbeddingModel() == null || p.getEmbeddingModel().isBlank()) {
+                throw new BusinessException("内置本地向量模型需配置向量模型名");
+            }
             return;
         }
         boolean hasChat = p.getChatModel() != null && !p.getChatModel().isBlank();
         boolean hasEmbed = p.getEmbeddingModel() != null && !p.getEmbeddingModel().isBlank();
         if (!hasChat && !hasEmbed) {
-            throw new BusinessException("同一提供商需同时配置聊天模型与向量模型");
+            throw new BusinessException("聊天模型与向量模型至少配置一项");
         }
-        // 同一 Provider 不允许只配置单一模型（聊天 + 向量 均需填写）
-        if (!hasChat) {
-            throw new BusinessException("同一提供商需同时配置聊天模型与向量模型（聊天模型必填）");
+        // 默认身份只能指向具备对应能力的 Provider
+        if (Boolean.TRUE.equals(p.getDefaultChat()) && !hasChat) {
+            throw new BusinessException("「默认聊天」只能选择配置了聊天模型的 Provider");
+        }
+        if (Boolean.TRUE.equals(p.getDefaultEmbedding()) && !hasEmbed) {
+            throw new BusinessException("「默认向量」只能选择配置了向量模型的 Provider");
         }
         // Anthropic 不提供 Embedding 接口：仅需聊天模型
         if ("anthropic".equals(p.getProviderType())) {
@@ -306,9 +312,6 @@ public class ModelProviderService {
         // Ollama 例外：可共用本地内置向量模型，允许 Embedding 为空
         if ("ollama".equals(p.getProviderType()) && !hasEmbed) {
             return;
-        }
-        if (!hasEmbed) {
-            throw new BusinessException("同一提供商需同时配置聊天模型与向量模型（向量模型必填）");
         }
     }
 

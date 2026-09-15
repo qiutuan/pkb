@@ -58,8 +58,14 @@ public class KnowledgeBaseService {
         if (kb.getCategoryId() != null && kb.getCategoryId() != 0 && categoryDao.findById(kb.getCategoryId()) == null) {
             throw new BusinessException("所选分类不存在");
         }
-        if (kb.getEmbeddingProviderId() != null && providerDao.findById(kb.getEmbeddingProviderId()) == null) {
-            throw new BusinessException("所选 Embedding 模型不存在");
+        if (kb.getEmbeddingProviderId() != null) {
+            var ep = providerDao.findById(kb.getEmbeddingProviderId());
+            if (ep == null) {
+                throw new BusinessException("所选 Embedding 模型不存在");
+            }
+            if (ep.getEmbeddingModel() == null || ep.getEmbeddingModel().isBlank()) {
+                throw new BusinessException("所选 Provider 未配置向量模型，请先补充或换选");
+            }
         }
         if (kb.getChunkStrategy() == null || kb.getChunkStrategy().isBlank()) {
             kb.setChunkStrategy("fixed");

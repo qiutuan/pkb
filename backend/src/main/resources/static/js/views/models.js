@@ -163,15 +163,18 @@ const ModelsView = {
         <label class="label">API Key ${isEdit && p.hasApiKey ? '（已设置，留空则不修改）' : ''}</label>
         <input class="input" type="password" id="mpKey" placeholder="sk-…" autocomplete="off">
       </div>
-      <div class="form-grid">
+        <div class="form-grid">
         <div class="form-item" id="mpChatRow" ${isLocal ? 'style="display:none"' : ''}>
-          <label class="label">聊天模型名 <span style="color:var(--danger)">*</span></label>
+          <label class="label">聊天模型名</label>
           <input class="input" id="mpChat" value="${Util.esc(p?.chatModel || '')}" placeholder="${p?.providerType === 'ollama' ? 'qwen2.5:7b' : 'deepseek-chat'}">
         </div>
         <div class="form-item" id="mpEmbedRow" ${isLocal ? 'style="display:none"' : ''}>
-          <label class="label" id="mpEmbedLabel">向量模型名 <span style="color:var(--danger)">*</span></label>
+          <label class="label" id="mpEmbedLabel">向量模型名</label>
           <input class="input" id="mpEmbed" value="${Util.esc(p?.embeddingModel || '')}" placeholder="bge-m3">
         </div>
+      </div>
+      <div class="form-item" id="mpBothHint" style="display:none">
+        <div class="hint">聊天模型与向量模型互相独立、可分别留空，但至少配置一项；只有聊天模型的 Provider 出现在对话/抽取/重排下拉，只有向量模型的 Provider 仅用于向量化。</div>
       </div>
       <div class="form-item" id="mpEmbedHint" style="display:none"></div>
       <div class="form-item" id="mpChatOnlyHint" style="display:none"></div>
@@ -234,6 +237,7 @@ const ModelsView = {
       mask.querySelector('#mpBase').placeholder = t === 'ollama' ? 'http://localhost:11434' : 'https://api.deepseek.com/v1';
       mask.querySelector('#mpChat').placeholder = typeHint[t]?.chat || 'deepseek-chat';
       mask.querySelector('#mpEmbed').placeholder = typeHint[t]?.embed || 'bge-m3';
+      mask.querySelector('#mpBothHint').style.display = local ? 'none' : '';
       mask.querySelector('#mpEmbedHint').innerHTML = 'Ollama 可共用本地内置向量模型，向量模型可留空';
       mask.querySelector('#mpChatOnlyHint').innerHTML = 'Anthropic 不提供 Embedding 接口，仅需配置聊天模型';
       // 校验提示重置
@@ -278,16 +282,18 @@ const ModelsView = {
         const target = elId.includes('Chat') ? mask.querySelector('#mpChatRow') : mask.querySelector('#mpEmbedRow');
         target.appendChild(div);
       };
-      // 校验：同一 Provider 需同时配置聊天与向量（Ollama 向量可空 / Anthropic 仅聊天）
-      if (t !== 'local') {
-        if (!chat) {
-          showHint('mpChatHint', '同一提供商需同时配置聊天模型与向量模型（聊天模型必填）');
-          return;
-        }
-        if (t !== 'ollama' && t !== 'anthropic' && !embed) {
-          showHint('mpEmbedHint2', '同一提供商需同时配置聊天模型与向量模型（向量模型必填）');
-          return;
-        }
+      // 校验：聊天模型与向量模型互相独立、各自可留空，但至少配置一项（Ollama 向量可空 / Anthropic 仅聊天）
+      if (t !== 'local' && !chat && !embed) {
+        showHint('mpChatHint', '聊天模型与向量模型至少配置一项');
+        return;
+      }
+      if (mask.querySelector('#mpDefaultChat').checked && !chat) {
+        showHint('mpChatHint', '「默认聊天」只能选择配置了聊天模型的 Provider');
+        return;
+      }
+      if (mask.querySelector('#mpDefaultEmbed').checked && !embed) {
+        showHint('mpEmbedHint2', '「默认向量」只能选择配置了向量模型的 Provider');
+        return;
       }
       const body = {
         name,

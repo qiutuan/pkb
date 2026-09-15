@@ -184,6 +184,7 @@ public class DatabaseInitializer {
     /** 旧库升级：为已有表补充新增列（SQLite 无 IF NOT EXISTS 加列，需探测） */
     private void migrate() {
         addColumnIfMissing("model_provider", "capabilities", "TEXT DEFAULT 'text'");
+        addColumnIfMissing("model_provider", "template_name", "TEXT");
         addColumnIfMissing("chat_session", "model_provider_id", "INTEGER");
         addColumnIfMissing("category", "sort_order", "INTEGER DEFAULT 0");
     }

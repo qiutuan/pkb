@@ -1,4 +1,19 @@
 /* ===== 模型管理视图 ===== */
+/* 提供商模板：仅预填，字段均可修改；key 空 = 自定义 */
+const MODEL_TEMPLATES = [
+  { key: '', name: '自定义（手动配置）', type: '', base: '', chat: '', embed: '', vision: false },
+  { key: 'dashscope', name: '阿里百炼 DashScope', type: 'openai_compatible', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', chat: 'qwen-plus', embed: 'text-embedding-v4', vision: true },
+  { key: 'deepseek', name: 'DeepSeek', type: 'openai_compatible', base: 'https://api.deepseek.com/v1', chat: 'deepseek-chat', embed: '', vision: false },
+  { key: 'zhipu', name: '智谱 GLM', type: 'openai_compatible', base: 'https://open.bigmodel.cn/api/paas/v4', chat: 'glm-4-flash', embed: 'embedding-3', vision: true },
+  { key: 'moonshot', name: 'Kimi（月之暗面）', type: 'openai_compatible', base: 'https://api.moonshot.cn/v1', chat: 'moonshot-v1-8k', embed: '', vision: false },
+  { key: 'mimo', name: '小米 MiMo', type: 'openai_compatible', base: 'https://api.mimo.xiaomi.com/v1', chat: 'MiMo-7B', embed: '', vision: false },
+  { key: 'wanx', name: '阿里万相 Wan（多模态）', type: 'openai_compatible', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', chat: 'qwen-vl-plus', embed: '', vision: true },
+  { key: 'openai', name: 'OpenAI 官方', type: 'openai_compatible', base: 'https://api.openai.com/v1', chat: 'gpt-4o-mini', embed: 'text-embedding-3-small', vision: true },
+  { key: 'ollama', name: 'Ollama 本地', type: 'ollama', base: 'http://localhost:11434', chat: 'qwen2.5:7b', embed: 'bge-m3', vision: false },
+  { key: 'anthropic', name: 'Anthropic Claude', type: 'anthropic', base: 'https://api.anthropic.com', chat: 'claude-sonnet-4-5', embed: '', vision: false },
+  { key: 'gemini', name: 'Google Gemini', type: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta', chat: 'gemini-2.0-flash', embed: 'text-embedding-004', vision: true },
+  { key: 'local', name: '内置本地（离线，仅向量）', type: 'local', base: '', chat: '', embed: 'local', vision: false }
+];
 const ModelsView = {
   el: null,
   providers: [],
@@ -62,7 +77,7 @@ const ModelsView = {
       const caps = (p.capabilities || 'text').split(',').filter(Boolean);
       return `<tr class="${p.enabled ? '' : 'model-row-off'}">
       <td style="font-weight:600">${Util.esc(p.name)}${p.providerType === 'local' ? ' <span class="badge badge-teal">离线</span>' : ''}</td>
-      <td><span class="badge badge-gray">${Util.providerTypeName(p.providerType)}</span></td>
+      <td><span class="badge badge-gray" title="${Util.esc(Util.providerTypeName(p.providerType))}">${Util.esc(p.templateName || Util.providerTypeName(p.providerType))}</span></td>
       <td>${Util.esc(p.chatModel || '-')}</td>
       <td>${Util.esc(p.embeddingModel || '-')}</td>
       <td>${caps.map(c => c === 'vision'
@@ -142,6 +157,13 @@ const ModelsView = {
         <input class="input" id="mpName" value="${Util.esc(p?.name || '')}" placeholder="如：DeepSeek / Ollama 本机">
       </div>
       <div class="form-item">
+        <label class="label">提供商模板</label>
+        <select class="select" id="mpTemplate">
+          ${MODEL_TEMPLATES.map(t => `<option value="${t.key}" ${(p?.templateName || '') === t.key ? 'selected' : ''}>${t.name}</option>`).join('')}
+        </select>
+        <div class="hint">模板仅预填 base_url 与推荐模型名，全部字段仍可修改；选「自定义」则完全空白</div>
+      </div>
+      <div class="form-item">
         <label class="label">类型</label>
         <select class="select" id="mpType" ${isEdit ? 'disabled' : ''}>
           <option value="openai_compatible" ${p?.providerType === 'openai_compatible' ? 'selected' : ''}>OpenAI 兼容（DeepSeek/通义/智谱/OpenAI…）</option>
@@ -210,11 +232,30 @@ const ModelsView = {
       </div>`);
 
     const typeSel = mask.querySelector('#mpType');
+    const tplSel = mask.querySelector('#mpTemplate');
+    const tpl = MODEL_TEMPLATES.find(t => t.key === tplSel.value) || MODEL_TEMPLATES[0];
     const typeHint = {
       openai_compatible: { chat: 'deepseek-chat', embed: 'bge-m3' },
       ollama: { chat: 'qwen2.5:7b', embed: 'bge-m3' },
       anthropic: { chat: 'claude-sonnet-4-5', embed: '' },
       gemini: { chat: 'gemini-2.0-flash', embed: 'text-embedding-004' }
+    };
+
+    const applyTemplate = t => {
+      if (!t || !t.key) return;
+      const base = mask.querySelector('#mpBase');
+      const chat = mask.querySelector('#mpChat');
+      const embed = mask.querySelector('#mpEmbed');
+      const fresh = !chat.value && !embed.value && !base.value;
+      if (t.type && !isEdit) typeSel.value = t.type;
+      if (t.base && !base.value) base.value = t.base;
+      if (t.chat && !chat.value) chat.value = t.chat;
+      if (t.embed && !embed.value) embed.value = t.embed;
+      if (fresh) {
+        mask.querySelector('#mpCapText').checked = true;
+        mask.querySelector('#mpCapVision').checked = !!t.vision;
+      }
+      applyType();
     };
 
     const applyType = () => {
@@ -245,7 +286,10 @@ const ModelsView = {
       mask.querySelector('#mpEmbedHint2')?.remove();
     };
     typeSel.onchange = applyType;
+    tplSel.onchange = () => applyTemplate(MODEL_TEMPLATES.find(t => t.key === tplSel.value));
     applyType();
+    // 编辑已有 Provider：按模板名选中（模板字段只在空时预填，不覆盖已有值）
+    if (isEdit && tpl.key) applyTemplate(tpl);
 
     mask.querySelector('#mpOllamaFetch').onclick = async () => {
       const base = mask.querySelector('#mpBase').value.trim();
@@ -298,6 +342,7 @@ const ModelsView = {
       const body = {
         name,
         providerType: t,
+        templateName: tplSel.value,
         baseUrl: t === 'local' ? '' : mask.querySelector('#mpBase').value.trim(),
         chatModel: t === 'local' ? '' : chat,
         embeddingModel: t === 'local' ? 'local' : embed,

@@ -325,7 +325,7 @@ public class ModelProviderService {
     private ProviderView toView(ModelProvider p) {
         boolean hasKey = p.getApiKeyEnc() != null && !p.getApiKeyEnc().isBlank();
         return new ProviderView(
-                p.getId(), p.getName(), p.getProviderType(), p.getBaseUrl(),
+                p.getId(), p.getName(), p.getProviderType(), p.getTemplateName(), p.getBaseUrl(),
                 p.getChatModel(), p.getEmbeddingModel(), p.getTemperature(), p.getMaxTokens(),
                 Boolean.TRUE.equals(p.getDefaultChat()), Boolean.TRUE.equals(p.getDefaultEmbedding()),
                 Boolean.TRUE.equals(p.getEnabled()),

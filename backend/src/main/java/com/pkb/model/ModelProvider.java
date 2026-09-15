@@ -11,8 +11,10 @@ import lombok.Data;
 public class ModelProvider {
     private Long id;
     private String name;
-    /** openai_compatible | ollama | anthropic | gemini | local */
+    /** openai_compatible | ollama | anthropic | gemini | local | rerank */
     private String providerType;
+    /** 提供商模板名（如 DeepSeek / 阿里百炼），用于列表展示与预填；自定义为空 */
+    private String templateName;
     private String baseUrl;
     /** 加密后的 API Key（仅内部使用，不对外序列化） */
     @JsonIgnore

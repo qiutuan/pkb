@@ -22,24 +22,24 @@ public class ModelProviderDao {
         this.jdbc = jdbc;
     }
 
-    private static final String COLS = "id, name, provider_type, base_url, api_key_enc, chat_model, embedding_model, "
+    private static final String COLS = "id, name, provider_type, template_name, base_url, api_key_enc, chat_model, embedding_model, "
             + "temperature, max_tokens, default_chat, default_embedding, enabled, capabilities, created_at, updated_at";
 
     public long insert(ModelProvider p) {
         String now = LocalDateTime.now().format(FMT);
-        return JdbcUtil.insertAndGetKey(jdbc, "INSERT INTO model_provider (name, provider_type, base_url, api_key_enc, chat_model, embedding_model, "
+        return JdbcUtil.insertAndGetKey(jdbc, "INSERT INTO model_provider (name, provider_type, template_name, base_url, api_key_enc, chat_model, embedding_model, "
                         + "temperature, max_tokens, default_chat, default_embedding, enabled, capabilities, created_at, updated_at) "
-                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                p.getName(), p.getProviderType(), p.getBaseUrl(), p.getApiKeyEnc(), p.getChatModel(), p.getEmbeddingModel(),
+                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                p.getName(), p.getProviderType(), p.getTemplateName(), p.getBaseUrl(), p.getApiKeyEnc(), p.getChatModel(), p.getEmbeddingModel(),
                 p.getTemperature(), p.getMaxTokens(), bool(p.getDefaultChat()), bool(p.getDefaultEmbedding()),
                 bool(p.getEnabled()), p.getCapabilities(), now, now);
     }
 
     public void update(ModelProvider p) {
-        jdbc.update("UPDATE model_provider SET name=?, provider_type=?, base_url=?, api_key_enc=?, chat_model=?, "
+        jdbc.update("UPDATE model_provider SET name=?, provider_type=?, template_name=?, base_url=?, api_key_enc=?, chat_model=?, "
                         + "embedding_model=?, temperature=?, max_tokens=?, default_chat=?, default_embedding=?, enabled=?, "
                         + "capabilities=?, updated_at=? WHERE id=?",
-                p.getName(), p.getProviderType(), p.getBaseUrl(), p.getApiKeyEnc(), p.getChatModel(), p.getEmbeddingModel(),
+                p.getName(), p.getProviderType(), p.getTemplateName(), p.getBaseUrl(), p.getApiKeyEnc(), p.getChatModel(), p.getEmbeddingModel(),
                 p.getTemperature(), p.getMaxTokens(), bool(p.getDefaultChat()), bool(p.getDefaultEmbedding()),
                 bool(p.getEnabled()), p.getCapabilities(), LocalDateTime.now().format(FMT), p.getId());
     }

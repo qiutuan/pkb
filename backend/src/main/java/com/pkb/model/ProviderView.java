@@ -7,6 +7,7 @@ public record ProviderView(
         Long id,
         String name,
         String providerType,
+        String templateName,
         String baseUrl,
         String chatModel,
         String embeddingModel,

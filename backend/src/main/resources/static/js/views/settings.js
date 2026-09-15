@@ -4,6 +4,7 @@ const SettingsView = {
   values: {},
   tab: 'prompts',
   providers: [],
+  rerankProviders: [],
 
   async init(el) {
     this.el = el;
@@ -24,8 +25,11 @@ const SettingsView = {
   async loadProviders() {
     try {
       const list = await Api.get('/providers') || [];
-      this.providers = list.filter(p => p.enabled && p.chatModel);
-    } catch (e) { this.providers = []; }
+      // 聊天/抽取可用：启用且有聊天模型（排除 Rerank 专用 Provider）
+      this.providers = list.filter(p => p.enabled && p.chatModel && p.providerType !== 'rerank');
+      // Rerank 模型：类型为 rerank 且启用
+      this.rerankProviders = list.filter(p => p.enabled && p.providerType === 'rerank');
+    } catch (e) { this.providers = []; this.rerankProviders = []; }
   },
 
   render() {
@@ -75,6 +79,19 @@ const SettingsView = {
     } else if (this.tab === 'rag') {
       box.innerHTML = `
         <div class="settings-grid">
+          ${setItem('ragHybrid', '混合检索（BM25 + 向量 + RRF）', '向量召回与 BM25 全文召回用 RRF（k=60）融合，显著提升关键词精确命中；关闭后回退为纯向量检索。',
+            `<label class="switch-label"><span class="switch"><input type="checkbox" id="sRagHybrid" ${v.ragHybrid === false ? '' : 'checked'}><span class="slider"></span></span></label>`, 'ragHybrid')}
+          ${setItem('ragRecallMultiplier', '召回倍率', '先召回 TopK×倍率 再重排截断，倍率越大重排选择面越广；范围 1–5。',
+            `<input class="input" type="number" id="sRagRecallMultiplier" value="${v.ragRecallMultiplier ?? 3}" min="1" max="5">`, 'ragRecallMultiplier')}
+          ${setItem('ragScoreNorm', '分数归一化', '不同 Embedding 模型相似度分布差异大；min-max 把向量分归一化到 0–1 便于统一阈值，默认不变。',
+            `<select class="select" id="sRagScoreNorm">
+              <option value="none" ${(v.ragScoreNorm || 'none') === 'none' ? 'selected' : ''}>不变（默认）</option>
+              <option value="minmax" ${v.ragScoreNorm === 'minmax' ? 'selected' : ''}>min-max 归一化</option>
+            </select>`, 'ragScoreNorm')}
+          ${setItem('ragQueryRewrite', '检索前查询改写', '用聊天模型把口语化/指代问题改写为独立检索式（结合对话历史）；<b>会增加一次 LLM 调用</b>，默认关闭。',
+            `<label class="switch-label"><span class="switch"><input type="checkbox" id="sRagQueryRewrite" ${v.ragQueryRewrite ? 'checked' : ''}><span class="slider"></span></span></label>`, 'ragQueryRewrite')}
+          ${setItem('ragHyde', 'HyDE 假设答案', '检索前生成一段假设资料片段辅助向量召回；<b>会增加一次 LLM 调用</b>，默认关闭。',
+            `<label class="switch-label"><span class="switch"><input type="checkbox" id="sRagHyde" ${v.ragHyde ? 'checked' : ''}><span class="slider"></span></span></label>`, 'ragHyde')}
           ${setItem('chunkStrategy', '默认分块策略', '知识库级可覆盖；中文文档推荐「按段落优先」，兼顾语义完整与检索精度。',
             `<select class="select" id="sChunkStrategy">
               <option value="paragraph" ${v.chunkStrategy === 'paragraph' ? 'selected' : ''}>按段落优先（推荐中文）</option>
@@ -88,12 +105,18 @@ const SettingsView = {
             `<input class="input" type="number" id="sRagTopK" value="${v.ragTopK ?? 8}" min="1" max="50">`, 'ragTopK')}
           ${setItem('ragMinScore', '相似度阈值', '低于该分数的片段不参与回答，范围 0–1。',
             `<input class="input" type="number" id="sRagMinScore" value="${v.ragMinScore ?? 0.25}" min="0" max="1" step="0.05">`, 'ragMinScore')}
-          ${setItem('ragRerank', '重排策略', '混合（向量+关键词）/ LLM 重排（需默认聊天模型）/ 不重排。',
+          ${setItem('ragRerank', '重排策略', '混合（向量+关键词）/ LLM 重排（需默认聊天模型）/ 外部 Rerank 模型（OpenAI 协议 /v1/rerank）/ 不重排。',
             `<select class="select" id="sRagRerank">
               <option value="hybrid" ${v.ragRerank === 'hybrid' ? 'selected' : ''}>混合（向量 0.65 + 关键词 0.35）</option>
               <option value="llm" ${v.ragRerank === 'llm' ? 'selected' : ''}>LLM 重排（需默认聊天模型）</option>
+              <option value="rerank_model" ${v.ragRerank === 'rerank_model' ? 'selected' : ''}>Rerank 模型（/v1/rerank）</option>
               <option value="none" ${v.ragRerank === 'none' ? 'selected' : ''}>不重排</option>
             </select>`, 'ragRerank')}
+          ${setItem('ragRerankProvider', 'Rerank 模型', '选择类型为「Rerank」的 Provider；不选则使用默认 Rerank Provider（在模型管理配置）。',
+            `<select class="select" id="sRagRerankProvider">
+              <option value="">使用默认 Rerank Provider</option>
+              ${this.rerankProviders.map(p => `<option value="${p.id}" ${Number(v.ragRerankProvider) === p.id ? 'selected' : ''}>${Util.esc(p.name)}（${Util.esc(p.chatModel)}）</option>`).join('')}
+            </select>`, 'ragRerankProvider')}
           ${setItem('ragGraphHop', '图谱召回跳数', 'GraphRAG 沿实体关系的扩展跳数，范围 1–4。',
             `<input class="input" type="number" id="sRagGraphHop" value="${v.ragGraphHop ?? 2}" min="1" max="4">`, 'ragGraphHop')}
           ${setItem('ragGraphEntities', '图谱召回实体数', '每次图谱召回实体数量上限，范围 1–20。',
@@ -167,6 +190,7 @@ const SettingsView = {
     };
     if (this.tab === 'rag') {
       num('sRagTopK', 1, 50, true);
+      num('sRagRecallMultiplier', 1, 5, true);
       num('sRagMinScore', 0, 1, false);
       const cs = num('sChunkSize', 100, 4000, true);
       const ov = num('sChunkOverlap', 0, 500, true);
@@ -214,12 +238,18 @@ const SettingsView = {
         body.systemPrompt = get('sSystemPrompt').value;
         body.extractPrompt = get('sExtractPrompt').value;
       } else if (this.tab === 'rag') {
+        body.ragHybrid = get('sRagHybrid').checked;
+        body.ragRecallMultiplier = Number(get('sRagRecallMultiplier').value);
+        body.ragScoreNorm = get('sRagScoreNorm').value;
+        body.ragQueryRewrite = get('sRagQueryRewrite').checked;
+        body.ragHyde = get('sRagHyde').checked;
         body.chunkStrategy = get('sChunkStrategy').value;
         body.chunkSize = Number(get('sChunkSize').value);
         body.chunkOverlap = Number(get('sChunkOverlap').value);
         body.ragTopK = Number(get('sRagTopK').value);
         body.ragMinScore = Number(get('sRagMinScore').value);
         body.ragRerank = get('sRagRerank').value;
+        body.ragRerankProvider = Number(get('sRagRerankProvider').value) || 0;
         body.ragGraphHop = Number(get('sRagGraphHop').value);
         body.ragGraphEntities = Number(get('sRagGraphEntities').value);
         body.ragGraphChunks = Number(get('sRagGraphChunks').value);

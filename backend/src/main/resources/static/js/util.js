@@ -37,7 +37,7 @@ const Util = {
     return `<span class="badge ${cls}">${text}</span>`;
   },
   providerTypeName(t) {
-    return { openai_compatible: 'OpenAI 兼容', ollama: 'Ollama 本地', anthropic: 'Anthropic', gemini: 'Google Gemini', local: '内置本地' }[t] || t;
+    return { openai_compatible: 'OpenAI 兼容', ollama: 'Ollama 本地', anthropic: 'Anthropic', gemini: 'Google Gemini', local: '内置本地', rerank: 'Rerank 模型' }[t] || t;
   }
 };
 

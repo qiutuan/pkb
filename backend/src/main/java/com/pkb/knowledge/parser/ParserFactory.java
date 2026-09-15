@@ -18,6 +18,10 @@ public final class ParserFactory {
             case "txt", "md", "markdown" -> new TextParser();
             case "pdf" -> new PdfParser();
             case "docx", "doc" -> new DocxParser();
+            case "xlsx", "xls", "csv" -> new TableParser();
+            case "pptx" -> new PptxParser();
+            case "html", "htm" -> new HtmlParser();
+            case "epub" -> new EpubParser();
             default -> null;
         };
     }

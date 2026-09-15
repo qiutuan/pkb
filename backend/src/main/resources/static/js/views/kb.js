@@ -97,7 +97,7 @@ const KbView = {
     }
     return this.kbs.map(v => {
       const k = v.kb;
-      const accept = k.multimodal ? '.txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.bmp,.webp,.mp4,.mov,.avi' : '.txt,.md,.pdf,.docx,.doc';
+      const accept = k.multimodal ? '.txt,.md,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.html,.htm,.epub,.png,.jpg,.jpeg,.gif,.bmp,.webp,.mp4,.mov,.avi' : '.txt,.md,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.html,.htm,.epub';
       return `<div class="kb-card" data-id="${k.id}">
         <div class="kb-card-top">
           <span class="kb-card-name">${Util.esc(k.name)}</span>
@@ -214,7 +214,12 @@ const KbView = {
   async uploadFiles(kbId, files) {
     const kb = this.kbs.find(x => x.kb.id === kbId);
     const okFiles = [], blocked = [];
+    const SUPPORTED = /^(.+)\.(txt|md|markdown|pdf|docx|doc|xlsx|xls|csv|pptx|html|htm|epub|png|jpe?g|gif|bmp|webp|mp4|mov|avi|mkv)$/i;
     for (const f of files) {
+      if (!SUPPORTED.test(f.name)) {
+        blocked.push({ fileName: f.name, reason: '不支持的文件格式（支持 txt/md/pdf/docx/doc/xlsx/xls/csv/pptx/html/epub，多模态另含图片视频）' });
+        continue;
+      }
       const isMedia = /\.(png|jpe?g|gif|bmp|webp|mp4|mov|avi|mkv)$/i.test(f.name);
       if (isMedia && kb && !kb.kb.multimodal) {
         blocked.push({ fileName: f.name, reason: '当前知识库为纯文本模式，不接受图片/视频' });
@@ -367,9 +372,18 @@ const KbView = {
         </div>
       </div>
       <div class="form-item">
+        <label class="label">表格解析策略 <span class="hint" style="margin-left:6px">仅影响 xlsx / xls / csv 导入</span></label>
+        <select class="select" id="kbTableStrategy">
+          <option value="table_text" ${(kb?.tableStrategy || 'table_text') === 'table_text' ? 'selected' : ''}>表格转文本（Markdown 表，表头保留）</option>
+          <option value="table_json" ${kb?.tableStrategy === 'table_json' ? 'selected' : ''}>逐行 JSON（每行一条记录，适合结构化问答）</option>
+          <option value="table_summary" ${kb?.tableStrategy === 'table_summary' ? 'selected' : ''}>Sheet 摘要 + 明细（LLM 概述 + 逐行明细）</option>
+        </select>
+        <div class="form-hint">单个 Sheet 超过 1000 行将自动按批切分（每批保留表头）；摘要策略需默认聊天模型</div>
+      </div>
+      <div class="form-item">
         <label class="label">模式</label>
         <div class="mode-radio">
-          <label class="radio-label"><input type="radio" name="kbMode" value="text" ${!kb?.multimodal ? 'checked' : ''}> 纯文本 <span class="hint">仅接受 txt / md / pdf / docx / doc</span></label>
+          <label class="radio-label"><input type="radio" name="kbMode" value="text" ${!kb?.multimodal ? 'checked' : ''}> 纯文本 <span class="hint">txt / md / pdf / docx / 表格 / pptx / html / epub 等文本内容</span></label>
           <label class="radio-label"><input type="radio" name="kbMode" value="multimodal" ${kb?.multimodal ? 'checked' : ''}> 多模态 <span class="hint">接受图片 / 视频，需多模态模型</span></label>
         </div>
       </div>
@@ -414,7 +428,8 @@ const KbView = {
         chunkOverlap: Number(mask.querySelector('#kbChunkOverlap').value),
         multimodal: mode === 'multimodal',
         graphEnabled: mask.querySelector('#kbGraph').checked,
-        contextual: mask.querySelector('#kbContextual').checked
+        contextual: mask.querySelector('#kbContextual').checked,
+        tableStrategy: mask.querySelector('#kbTableStrategy').value
       };
       try {
         if (isEdit) await Api.put(`/kbs/${kb.id}`, body);
@@ -440,9 +455,10 @@ const KbView = {
             </div>
             <div class="hint">${Util.esc(v?.kb.description || '')} · ${Util.esc(v?.categoryName || '未分类')} · 向量模型：${Util.esc(v?.providerName || '默认')} · 分块：${v?.kb.chunkStrategy === 'paragraph' ? '按段落' : '固定'} ${v?.kb.chunkSize}/${v?.kb.chunkOverlap}</div>
           </div>
+          <button class="btn btn-sm" id="kbFmtTip" title="txt/md：直接文本；pdf/docx：提取文本；xlsx/xls/csv：按知识库「表格解析策略」（转文本 / 逐行 JSON / 摘要+明细），超 1000 行自动分批；pptx：逐页文本；html/epub：正文/章节提取；图片/视频：仅多模态模式可上传">格式说明 ?</button>
           <button class="btn btn-primary" id="kbUploadBtn">上传文档</button>
           <input type="file" id="kbFileInput" multiple hidden
-            accept="${v?.kb.multimodal ? '.txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.bmp,.webp,.mp4,.mov,.avi' : '.txt,.md,.pdf,.docx,.doc'}">
+            accept="${v?.kb.multimodal ? '.txt,.md,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.html,.htm,.epub,.png,.jpg,.jpeg,.gif,.bmp,.webp,.mp4,.mov,.avi' : '.txt,.md,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.html,.htm,.epub'}">
         </div>
         <div class="kb-detail-docs card">
           <div class="kb-docs-head"><span>文档（${v?.docCount ?? 0}）</span><span class="hint">上传后自动解析 → 分块 → 向量化 → 入库</span></div>

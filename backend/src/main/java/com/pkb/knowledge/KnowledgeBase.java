@@ -17,6 +17,8 @@ public class KnowledgeBase {
     private Boolean graphEnabled;
     /** Contextual 模式：入库时由 LLM 为每个分块生成文档上下文头并拼入向量文本（一次性入库成本） */
     private Boolean contextual;
+    /** 表格解析策略：table_text（转 Markdown 文本）/ table_json（逐行 JSON）/ table_summary（Sheet 摘要 + 明细） */
+    private String tableStrategy;
     private String createdAt;
     private String updatedAt;
 }

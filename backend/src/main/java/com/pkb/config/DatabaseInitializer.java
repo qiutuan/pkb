@@ -188,6 +188,7 @@ public class DatabaseInitializer {
         addColumnIfMissing("chat_session", "model_provider_id", "INTEGER");
         addColumnIfMissing("category", "sort_order", "INTEGER DEFAULT 0");
         addColumnIfMissing("knowledge_base", "contextual", "INTEGER DEFAULT 0");
+        addColumnIfMissing("knowledge_base", "table_strategy", "TEXT DEFAULT 'table_text'");
     }
 
     private void addColumnIfMissing(String table, String column, String ddl) {

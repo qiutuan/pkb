@@ -137,7 +137,7 @@ public class DocumentController {
                 throw new BusinessException("当前知识库为纯文本模式，不接受图片/视频等媒体文件（请在知识库设置中开启多模态模式）");
             }
         } else if (!com.pkb.knowledge.parser.ParserFactory.supported(name)) {
-            throw new BusinessException("不支持的文档类型：" + name + "（支持 txt/md/pdf/docx/doc；多模态模式另支持图片与视频）");
+            throw new BusinessException("不支持的文档类型：" + name + "（支持 txt/md/pdf/docx/doc/xlsx/xls/csv/pptx/html/epub；多模态模式另支持图片与视频）");
         }
         try {
             Path dir = Paths.get(props.getDataDir()).toAbsolutePath().normalize()

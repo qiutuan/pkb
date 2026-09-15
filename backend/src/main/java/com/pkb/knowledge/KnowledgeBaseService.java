@@ -76,6 +76,10 @@ public class KnowledgeBaseService {
         if (!java.util.Set.of("fixed", "paragraph", "parent_child").contains(kb.getChunkStrategy())) {
             throw new BusinessException("不支持的分块策略：" + kb.getChunkStrategy());
         }
+        if (kb.getTableStrategy() != null
+                && !java.util.Set.of("table_text", "table_json", "table_summary").contains(kb.getTableStrategy())) {
+            throw new BusinessException("不支持的表格解析策略：" + kb.getTableStrategy());
+        }
         if (kb.getChunkSize() == null || kb.getChunkSize() < 100 || kb.getChunkSize() > 4000) {
             throw new BusinessException("分块大小需在 100–4000 之间");
         }

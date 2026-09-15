@@ -119,19 +119,12 @@ public class DocumentPipelineService {
             return;
         }
         try {
-            // 1. 解析
+            // 1. 解析（表格按知识库策略：转文本 / 逐行 JSON / 摘要+明细）
             documentDao.updateStatus(docId, "PROCESSING", 0.05, null);
-            String text = extractText(doc, kb);
+            List<ChunkItem> items = extractContent(doc, kb);
             documentDao.updateStatus(docId, "PROCESSING", 0.3, null);
-            if (text == null || text.isBlank()) {
-                fail(docId, 0.3, "未能从文档中提取到文本内容");
-                return;
-            }
-
-            // 2. 分块（普通 / 段落 / 父子分块）
-            List<ChunkItem> items = splitToItems(kb, text);
             if (items.isEmpty()) {
-                fail(docId, 0.5, "未生成任何片段");
+                fail(docId, 0.3, "未能从文档中提取到文本内容");
                 return;
             }
             documentDao.updateStatus(docId, "PROCESSING", 0.5, null);
@@ -278,20 +271,63 @@ public class DocumentPipelineService {
         return msg.length() > 300 ? msg.substring(0, 300) : msg;
     }
 
-    private String extractText(Document doc, KnowledgeBase kb) throws Exception {
+    /** 内容提取：普通文档 → 文本分块；表格按知识库策略（转文本 / 逐行 JSON / 摘要+明细）产出块 */
+    private List<ChunkItem> extractContent(Document doc, KnowledgeBase kb) throws Exception {
         String fileName = doc.getFileName();
         // 媒体文件（多模态知识库）
         if (com.pkb.util.TextUtil.isMediaFile(fileName)) {
             if (!Boolean.TRUE.equals(kb.getMultimodal())) {
                 throw new BusinessException("当前知识库为纯文本模式，不接受图片/视频等媒体文件");
             }
-            return describeMedia(doc);
+            return List.of(new ChunkItem(describeMedia(doc), null));
         }
         var parser = com.pkb.knowledge.parser.ParserFactory.forFile(fileName);
         if (parser == null) {
             throw new BusinessException("不支持的文档类型：" + fileName);
         }
-        return parser.parse(Paths.get(doc.getFilePath()));
+        String strategy = kb.getTableStrategy() == null ? "table_text" : kb.getTableStrategy();
+        if (parser instanceof com.pkb.knowledge.parser.ChunkedParser cp
+                && ("table_json".equals(strategy) || "table_summary".equals(strategy))) {
+            List<String> rows = cp.parseChunks(Paths.get(doc.getFilePath()));
+            List<ChunkItem> items = new ArrayList<>();
+            for (String row : rows) {
+                items.add(new ChunkItem(row, null));
+            }
+            if ("table_summary".equals(strategy) && !rows.isEmpty()) {
+                // Sheet 摘要：取前 15 行明细交给 LLM 生成一句话概述，作为首个块；失败不影响明细入库
+                String summary = summarizeSheet(kb, fileName, rows.subList(0, Math.min(15, rows.size())));
+                if (summary != null) {
+                    items.add(0, new ChunkItem("【表格摘要】" + summary, null));
+                }
+            }
+            return items;
+        }
+        String text = parser.parse(Paths.get(doc.getFilePath()));
+        return splitToItems(kb, text);
+    }
+
+    /** 表格 Sheet 摘要（table_summary 策略）：基于前若干行明细让 LLM 生成概述 */
+    private String summarizeSheet(KnowledgeBase kb, String fileName, List<String> rows) {
+        try {
+            ModelProvider chat = providerService.defaultChatProvider();
+            ChatModel model = modelFactory.chatModel(chat);
+            StringBuilder sample = new StringBuilder();
+            for (int i = 0; i < rows.size(); i++) {
+                sample.append(i + 1).append(". ").append(rows.get(i)).append("\n");
+            }
+            String prompt = "下面是表格文件「" + fileName + "」的前 " + rows.size() + " 行数据（JSON 格式）。"
+                    + "请用一句话（60 字以内）概括这张表的内容、主要列与用途，用于知识库检索索引。只输出概括本身。\n\n" + sample;
+            String r = model.chat(dev.langchain4j.model.chat.request.ChatRequest.builder()
+                    .messages(List.of(dev.langchain4j.data.message.UserMessage.from(prompt))).build())
+                    .aiMessage().text();
+            if (r == null || r.isBlank()) {
+                return null;
+            }
+            return r.trim();
+        } catch (Exception e) {
+            log.warn("表格摘要生成失败，跳过（不影响明细入库）: {}", e.getMessage());
+            return null;
+        }
     }
 
     /** 用多模态聊天模型描述媒体内容用于向量化（不做自研 OCR/抽帧）；大文件仅索引文件名防 OOM */

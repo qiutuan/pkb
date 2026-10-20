@@ -184,7 +184,7 @@ const ChatView = {
   /** 导出会话为 Markdown（含来源引用） */
   async exportSession(id) {
     try {
-      const resp = await fetch(`/api/chat/sessions/${id}/export`, { headers: Api.jsonHeaders() });
+      const resp = await fetch(`/api/chat/sessions/${id}/export`);
       if (!resp.ok) throw new Error('导出失败（' + resp.status + '）');
       const text = await resp.text();
       const s = this.sessions.find(x => x.id === id) || {};

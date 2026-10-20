@@ -225,7 +225,12 @@ public class DocumentPipelineService {
                     if (!m.find()) {
                         continue;
                     }
-                    int idx = Integer.parseInt(m.group(1)) - 1;
+                    int idx;
+                    try {
+                        idx = Integer.parseInt(m.group(1)) - 1;
+                    } catch (NumberFormatException nfe) {
+                        continue;
+                    }
                     String head = m.group(2).trim();
                     if (idx >= 0 && idx < end - i && !head.isBlank()) {
                         ChunkItem item = items.get(i + idx);

@@ -7,6 +7,7 @@ import com.pkb.dao.DocumentDao;
 import com.pkb.dao.GraphDao;
 import com.pkb.dao.KnowledgeBaseDao;
 import com.pkb.dao.ModelProviderDao;
+import com.pkb.model.ModelProvider;
 import com.pkb.rag.Bm25Index;
 import com.pkb.vector.VectorStore;
 import com.pkb.vector.VectorStoreFactory;
@@ -113,6 +114,7 @@ public class KnowledgeBaseService {
         chunkDao.deleteByKb(id);
         graphDao.deleteByKb(id);
         vs.deleteByKb(id);
+        bm25.invalidate(id);
         dao.delete(id);
     }
 
@@ -120,11 +122,16 @@ public class KnowledgeBaseService {
         long docCount = documentDao.countByKb(kb.getId());
         long chunkCount = chunkDao.countByKb(kb.getId());
         long vectorCount = vectorStoreFactory.get().count(kb.getId());
-        String categoryName = kb.getCategoryId() == null || kb.getCategoryId() == 0 ? ""
-                : (categoryDao.findById(kb.getCategoryId()) == null ? "" : categoryDao.findById(kb.getCategoryId()).getName());
-        String providerName = kb.getEmbeddingProviderId() == null ? ""
-                : (providerDao.findById(kb.getEmbeddingProviderId()) == null ? "" : providerDao.findById(kb.getEmbeddingProviderId()).getName());
-        // 文档索引状态统计（用于卡片状态徽标）
+        String categoryName = "";
+        if (kb.getCategoryId() != null && kb.getCategoryId() != 0) {
+            Category cat = categoryDao.findById(kb.getCategoryId());
+            categoryName = cat == null ? "" : cat.getName();
+        }
+        String providerName = "";
+        if (kb.getEmbeddingProviderId() != null) {
+            ModelProvider p = providerDao.findById(kb.getEmbeddingProviderId());
+            providerName = p == null ? "" : p.getName();
+        }
         long pending = documentDao.countByKbAndStatus(kb.getId(), "PENDING");
         long processing = documentDao.countByKbAndStatus(kb.getId(), "PROCESSING");
         long failed = documentDao.countByKbAndStatus(kb.getId(), "FAILED");

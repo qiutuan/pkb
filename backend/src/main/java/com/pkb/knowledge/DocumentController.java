@@ -34,12 +34,14 @@ public class DocumentController {
     private final com.pkb.dao.ChunkDao chunkDao;
     private final com.pkb.dao.GraphDao graphDao;
     private final com.pkb.vector.VectorStoreFactory vectorStoreFactory;
+    private final com.pkb.rag.Bm25Index bm25;
     private final com.pkb.config.PkbProperties props;
 
     public DocumentController(KnowledgeBaseService kbService, DocumentPipelineService pipeline,
                               com.pkb.dao.DocumentDao documentDao, com.pkb.dao.ChunkDao chunkDao,
                               com.pkb.dao.GraphDao graphDao,
                               com.pkb.vector.VectorStoreFactory vectorStoreFactory,
+                              com.pkb.rag.Bm25Index bm25,
                               com.pkb.config.PkbProperties props) {
         this.kbService = kbService;
         this.pipeline = pipeline;
@@ -47,6 +49,7 @@ public class DocumentController {
         this.chunkDao = chunkDao;
         this.graphDao = graphDao;
         this.vectorStoreFactory = vectorStoreFactory;
+        this.bm25 = bm25;
         this.props = props;
     }
 
@@ -187,6 +190,7 @@ public class DocumentController {
         graphDao.deleteEntityChunkByChunkIds(chunkIds);
         chunkDao.deleteByDoc(id);
         documentDao.delete(id);
+        bm25.invalidate(doc.getKbId());
         if (doc.getFilePath() != null) {
             try {
                 Files.deleteIfExists(Paths.get(doc.getFilePath()));

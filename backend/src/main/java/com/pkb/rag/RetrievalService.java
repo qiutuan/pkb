@@ -120,6 +120,12 @@ public class RetrievalService {
         Map<Long, RetrievedChunk> graphHits = new HashMap<>();
         Map<Long, String> docNameCache = new HashMap<>();
 
+        // 先收集所有命中（chunkId + score），最后一次性批量加载 chunk，避免 N+1
+        List<long[]> vecHits = new ArrayList<>();   // [kbId, chunkId]
+        List<Float> vecScores = new ArrayList<>();
+        List<long[]> kwHits = new ArrayList<>();   // [kbId, chunkId]
+        List<Float> kwScores = new ArrayList<>();
+
         for (Long kbId : req.kbIds()) {
             KnowledgeBase kb = kbService.require(kbId);
             try {
@@ -127,20 +133,13 @@ public class RetrievalService {
                 VectorStore vs = vectorStoreFactory.get();
                 List<VectorStore.ScoredId> hits = vs.search(kbId, qv, recallTop, hybrid ? 0 : minScore);
                 for (VectorStore.ScoredId hit : hits) {
-                    Chunk c = chunkById(kbId, hit.chunkId());
-                    if (c == null) {
-                        continue;
-                    }
-                    rawVectorScores.add((double) hit.score());
-                    vectorHits.add(toRetrieved(c, kbId, docName(c, docNameCache), hit.score(), "vector"));
+                    vecHits.add(new long[]{kbId, hit.chunkId()});
+                    vecScores.add(hit.score());
                 }
                 if (hybrid) {
                     for (Bm25Index.Scored s : bm25.search(kbId, effQuery, recallTop)) {
-                        Chunk c = chunkById(kbId, s.chunkId());
-                        if (c == null) {
-                            continue;
-                        }
-                        keywordHits.add(toRetrieved(c, kbId, docName(c, docNameCache), s.score(), "keyword"));
+                        kwHits.add(new long[]{kbId, s.chunkId()});
+                        kwScores.add((float) s.score());
                     }
                 }
             } catch (BusinessException e) {
@@ -157,6 +156,42 @@ public class RetrievalService {
                     log.warn("图谱召回失败: {}", e.getMessage());
                 }
             }
+        }
+
+        // 批量加载所有命中的 chunk（一次 IN 查询）
+        java.util.Set<Long> allIds = new java.util.HashSet<>();
+        for (long[] a : vecHits) allIds.add(a[1]);
+        for (long[] a : kwHits) allIds.add(a[1]);
+        Map<Long, Chunk> chunkMap = new java.util.HashMap<>();
+        for (Chunk c : chunkDao.findByIds(new java.util.ArrayList<>(allIds))) {
+            chunkMap.put(c.getId(), c);
+        }
+
+        // 向量命中（同 chunk 多库命中保留最高分）
+        Map<Long, Double> vecScoreByChunk = new HashMap<>();
+        for (int i = 0; i < vecHits.size(); i++) {
+            long cid = vecHits.get(i)[1];
+            Chunk c = chunkMap.get(cid);
+            if (c == null) continue;
+            double score = vecScores.get(i);
+            vecScoreByChunk.merge(cid, score, Math::max);
+            rawVectorScores.add(score);
+        }
+        for (Map.Entry<Long, Double> e : vecScoreByChunk.entrySet()) {
+            Chunk c = chunkMap.get(e.getKey());
+            vectorHits.add(toRetrieved(c, c.getKbId(), docName(c, docNameCache), e.getValue(), "vector"));
+        }
+        // BM25 命中
+        Map<Long, Double> kwScoreByChunk = new HashMap<>();
+        for (int i = 0; i < kwHits.size(); i++) {
+            long cid = kwHits.get(i)[1];
+            Chunk c = chunkMap.get(cid);
+            if (c == null) continue;
+            kwScoreByChunk.merge(cid, (double) kwScores.get(i), Math::max);
+        }
+        for (Map.Entry<Long, Double> e : kwScoreByChunk.entrySet()) {
+            Chunk c = chunkMap.get(e.getKey());
+            keywordHits.add(toRetrieved(c, c.getKbId(), docName(c, docNameCache), e.getValue(), "keyword"));
         }
 
         Map<String, Object> distribution = scoreDistribution(rawVectorScores, scoreNorm);
@@ -357,11 +392,6 @@ public class RetrievalService {
         }
         return new RetrievedChunk(c.getId(), kbId, c.getDocId(), docName,
                 c.getPosition() == null ? 0 : c.getPosition(), content, score, source);
-    }
-
-    private Chunk chunkById(long kbId, long chunkId) {
-        List<Chunk> list = chunkDao.findByIds(List.of(chunkId));
-        return list.isEmpty() ? null : list.get(0);
     }
 
     private String docName(Chunk c, Map<Long, String> cache) {

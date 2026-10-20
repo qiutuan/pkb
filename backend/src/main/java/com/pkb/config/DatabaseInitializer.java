@@ -192,9 +192,11 @@ public class DatabaseInitializer {
     }
 
     private void addColumnIfMissing(String table, String column, String ddl) {
-        boolean exists = false;
+        boolean exists;
         try {
-            List<java.util.Map<String, Object>> cols = jdbc.queryForList("PRAGMA table_info(" + table + ")");            for (java.util.Map<String, Object> row : cols) {
+            List<java.util.Map<String, Object>> cols = jdbc.queryForList("PRAGMA table_info(" + table + ")");
+            exists = false;
+            for (java.util.Map<String, Object> row : cols) {
                 if (column.equals(String.valueOf(row.get("name")))) {
                     exists = true;
                     break;

@@ -3,9 +3,6 @@ package com.pkb.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.util.List;
-import java.util.Map;
-
 /**
  * pkb.* 配置项。
  */
@@ -142,18 +139,5 @@ public class PkbProperties {
         private int extractBatch = 4;
         private boolean extractOnIndex = true;
         private double entityMergeThreshold = 0.92;
-    }
-
-    /** 支持的环境变量别名（用于 docker-compose 注入） */
-    public static Map<String, String> envAliases() {
-        return Map.of(
-                "PKB_DATA_DIR", "pkb.data-dir",
-                "PKB_VECTOR_MODE", "pkb.vector.mode",
-                "PKB_PG_HOST", "pkb.vector.pgvector.host",
-                "PKB_PG_PORT", "pkb.vector.pgvector.port",
-                "PKB_PG_DATABASE", "pkb.vector.pgvector.database",
-                "PKB_PG_USERNAME", "pkb.vector.pgvector.username",
-                "PKB_PG_PASSWORD", "pkb.vector.pgvector.password"
-        );
     }
 }
